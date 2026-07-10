@@ -5,25 +5,50 @@
 """
 from __future__ import annotations
 from .base import Tool
-
+import subprocess
+from pathlib import Path
 
 # --- edit：三种策略权衡（整文件重写 / unified diff / search-replace）---
 def _edit(path: str, old: str = "", new: str = "") -> str:
-    # TODO[Day6] 先实现最稳的 search-replace（old 在文件中唯一时替换为 new）
-    #            进阶：支持 unified diff / 整文件重写，比较失败率
-    raise NotImplementedError("Day6：实现 edit")
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    count = text.count(old)
+    if count == 0:
+        return f"[失败] 未找到待替换文本，请照抄文件原文（含缩进）。path={path}"
+    if count > 1:
+        return f"[失败] old 在文件中出现 {count} 次，不唯一；请扩大 old 片段使其唯一。"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text.replace(old, new, 1))
+    return f"已在 {path} 完成 1 处替换。"
 
 
 # --- grep：基于 ripgrep ---
-def _grep(pattern: str, path: str = ".") -> str:
-    # TODO[Day6] 调用系统 rg，返回匹配行（带文件名+行号）。与 glob 互补：grep 搜内容，glob 搜路径
-    raise NotImplementedError("Day6：实现 grep")
+def _grep(pattern: str, path: str = ".", max_lines: int = 100) -> str:
+    try:
+        p = subprocess.run(
+            ["rg", "--line-number", "--no-heading", pattern, path],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError:
+        return "[失败] 未找到 rg，请先安装 ripgrep。"
+    if p.returncode not in (0, 1):  # 1 = 无匹配，属正常
+        return f"[grep 出错] {p.stderr.strip()}"
+    lines = p.stdout.splitlines()
+    if not lines:
+        return f"[无匹配] pattern={pattern}"
+    if len(lines) > max_lines:
+        return "\n".join(lines[:max_lines]) + f"\n... [共 {len(lines)} 行，已截断前 {max_lines} 行]"
+    return "\n".join(lines)
 
 
 # --- glob：按文件名模式找文件 ---
-def _glob(pattern: str) -> str:
-    # TODO[Day6] 用 pathlib.Path().glob / rglob 找路径
-    raise NotImplementedError("Day6：实现 glob")
+def _glob(pattern: str, max_items: int = 100) -> str:
+    paths = [str(p) for p in Path(".").rglob(pattern) if p.is_file()]
+    if not paths:
+        return f"[无匹配] pattern={pattern}"
+    if len(paths) > max_items:
+        return "\n".join(paths[:max_items]) + f"\n... [共 {len(paths)} 个，已截断前 {max_items} 个]"
+    return "\n".join(paths)
 
 
 # --- web_fetch：URL -> markdown，控 token 预算 ---

@@ -4,13 +4,22 @@ from .base import Tool
 
 
 def _read(path: str, max_bytes: int = 100_000) -> str:
-    # TODO[Day5] 读取文件，超长截断并提示；带行号更利于后续 edit 定位
-    raise NotImplementedError("Day5：实现 read")
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read(max_bytes + 1)
+    truncated = len(text) > max_bytes
+    if truncated:
+        text = text[:max_bytes]
+    lines = text.splitlines()
+    body = "\n".join(f"{i:>6}\t{ln}" for i, ln in enumerate(lines, 1))
+    if truncated:
+        body += f"\n... [已截断，仅显示前 {max_bytes} 字节]"
+    return body or "[空文件]"
 
 
 def _write(path: str, content: str) -> str:
-    # TODO[Day5] 写文件；注意权限层（Day10）后续会拦截工作目录外的写入
-    raise NotImplementedError("Day5：实现 write")
+    with open(path, "w", encoding="utf-8") as f:
+        n = f.write(content)
+    return f"已写入 {n} 字节到 {path}"
 
 
 read_tool = Tool(
