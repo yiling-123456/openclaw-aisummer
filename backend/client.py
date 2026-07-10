@@ -50,6 +50,12 @@ class DeepSeekBackend:
             headers={"Authorization": f"Bearer {self.api_key}"},
             json=payload,
         )
+        if resp.is_error:
+            print("\n===== DeepSeek API 请求失败 =====")
+            print("状态码：", resp.status_code)
+            print("响应正文：", resp.text)
+            print("================================\n")
+
         resp.raise_for_status()
         msg = resp.json()["choices"][0]["message"]
         return self._normalize(msg)

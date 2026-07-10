@@ -51,6 +51,13 @@ def main(argv: list[str] | None = None) -> int:
     # 真正跑任务：优先用 DeepSeek API；没配 key 时回退到 FakeBackend（离线打通管道）
     from agent.loop import AgentLoop
     reg = build_default_registry()
+    from mcp.client import MCPClient, register_mcp_tools
+    try:
+        mcp = MCPClient(["python", "mcp/echo_server.py"])
+        mcp.start()
+        register_mcp_tools(reg, mcp)
+    except Exception as e:  # noqa
+        print(f"[提示] MCP 未接入（{e}），仅用内置工具。")
     try:
         from backend.client import DeepSeekBackend
         backend = DeepSeekBackend()                       # 需要 DEEPSEEK_API_KEY

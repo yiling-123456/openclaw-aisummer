@@ -53,8 +53,13 @@ def _glob(pattern: str, max_items: int = 100) -> str:
 
 # --- web_fetch：URL -> markdown，控 token 预算 ---
 def _web_fetch(url: str, max_tokens: int = 2000) -> str:
-    # TODO[Day7] httpx 抓取 -> markdownify 转 markdown -> 截断到预算内
-    raise NotImplementedError("Day7：实现 web_fetch")
+    import httpx
+    from markdownify import markdownify as md
+    from agent.context import truncate_observation
+    resp = httpx.get(url, timeout=20, follow_redirects=True)
+    resp.raise_for_status()
+    text = md(resp.text)                     # HTML -> markdown
+    return truncate_observation(text, max_chars=max_tokens * 4)
 
 
 # --- task_list（TodoWrite）：自维护待办，提升长任务成功率 ---
