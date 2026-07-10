@@ -29,8 +29,15 @@ class Skill:
 
 
 def parse_skill_md(text: str, path: Path) -> Skill:
-    # TODO[Day9] 解析 YAML frontmatter（name/description）+ 正文 body
-    raise NotImplementedError("Day9：解析 SKILL.md frontmatter")
+    import yaml
+    name = description = ""
+    body = text
+    if text.startswith("---"):
+        _, fm, body = text.split("---", 2)   # 头尾两个 --- 之间是 frontmatter
+        meta = yaml.safe_load(fm) or {}
+        name = meta.get("name", "")
+        description = meta.get("description", "")
+    return Skill(name=name, description=description, body=body.strip(), path=path)
 
 
 def load_skills(root: str = "skills") -> list[Skill]:
