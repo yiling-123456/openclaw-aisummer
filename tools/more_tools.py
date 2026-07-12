@@ -7,6 +7,7 @@ from __future__ import annotations
 from .base import Tool
 import subprocess
 from pathlib import Path
+import base64
 
 # --- edit：三种策略权衡（整文件重写 / unified diff / search-replace）---
 def _edit(path: str, old: str = "", new: str = "") -> str:
@@ -67,6 +68,12 @@ def _task_list(action: str, items: list | None = None) -> str:
     # TODO[Day7] 维护一个结构化待办（add/update/complete），作为模型的 scratchpad
     raise NotImplementedError("Day7：实现 task_list")
 
+# --- 图像识别模块 ---
+def image_block(path, media_type="image/png"):
+    b64 = base64.b64encode(open(path, "rb").read()).decode()
+    # Anthropic 风格内容块（本课端点）
+    return {"type": "image", "source":
+            {"type": "base64", "media_type": media_type, "data": b64}}
 
 edit_tool = Tool("edit", "编辑文件：把 old 文本替换为 new。",
                  {"type": "object", "properties": {"path": {"type": "string"},
