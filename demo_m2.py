@@ -14,5 +14,4 @@ resp = backend.chat(
     [{"role": "user", "content": "现在几点？"}],
     tools=tools,
 )
-
 print(resp)

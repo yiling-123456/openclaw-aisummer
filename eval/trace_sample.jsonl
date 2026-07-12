@@ -1,1 +1,0 @@
-{"ts": 1783495349.926, "step": 0, "tool_calls": [{"name": "read", "arguments": {"path": "config.json"}}], "note": "<tool_call>{\"name\":\"read\",\"arguments\":{\"", "prompt_tokens": 310, "completion_tokens": 22}

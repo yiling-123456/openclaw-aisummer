@@ -4,9 +4,6 @@ from .base import Tool
 import subprocess
 
 def _bash(command: str, timeout: int = 30) -> str:
-    # TODO[Day5] subprocess 执行，捕获 stdout/stderr/returncode，超时保护
-    # TODO[Day10] 接入权限层 + 沙箱（bwrap/firejail/docker），危险命令需确认
-    #raise NotImplementedError("Day5：实现 bash")
     try:
         p = subprocess.run(
             command, shell=True, capture_output=True, text=True, timeout=timeout,
@@ -19,6 +16,7 @@ def _bash(command: str, timeout: int = 30) -> str:
     if p.returncode != 0:
         out += f"\n[returncode={p.returncode}]"
     return out.strip() or "[无输出]"
+
 
 bash_tool = Tool(
     name="bash",

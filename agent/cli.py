@@ -51,6 +51,30 @@ def main(argv: list[str] | None = None) -> int:
     # 真正跑任务：优先用 DeepSeek API；没配 key 时回退到 FakeBackend（离线打通管道）
     from agent.loop import AgentLoop
     reg = build_default_registry()
+    from mcp.client import MCPClient, register_mcp_tools
+
+    # 连接 echo server
+    try:
+        echo_mcp = MCPClient(["python", "mcp/echo_server.py"])
+        echo_mcp.start()
+        register_mcp_tools(reg, echo_mcp)
+        print("[MCP] echo server 已接入")
+    except Exception as e:
+        print(f"[提示] echo MCP 未接入：{e}")
+
+    # 连接官方 filesystem server
+    try:
+        filesystem_mcp = MCPClient([
+            "npx",
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            ".",
+        ])
+        filesystem_mcp.start()
+        register_mcp_tools(reg, filesystem_mcp)
+        print("[MCP] filesystem server 已接入")
+    except Exception as e:
+        print(f"[提示] filesystem MCP 未接入：{e}")
     try:
         from backend.client import DeepSeekBackend
         backend = DeepSeekBackend()                       # 需要 DEEPSEEK_API_KEY
@@ -58,7 +82,10 @@ def main(argv: list[str] | None = None) -> int:
         from backend.fake_backend import FakeBackend
         print(f"[提示] 未启用真后端（{e}），回退 FakeBackend。配置 DEEPSEEK_API_KEY 后即用真模型。")
         backend = FakeBackend()
-    agent = AgentLoop(backend, reg, SYSTEM_PROMPT)
+    from skills.loader import load_skills, skills_catalog
+    skills = load_skills()
+    system = SYSTEM_PROMPT + "\n\n# 可用 Skills（相关时按其流程执行）\n" + skills_catalog(skills)
+    agent = AgentLoop(backend, reg, system)
     print(agent.run(args.task))
     return 0
 

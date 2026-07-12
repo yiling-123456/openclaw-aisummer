@@ -29,9 +29,38 @@ class Skill:
 
 
 def parse_skill_md(text: str, path: Path) -> Skill:
-    # TODO[Day9] 解析 YAML frontmatter（name/description）+ 正文 body
-    raise NotImplementedError("Day9：解析 SKILL.md frontmatter")
-
+    #import yaml
+    #name = description = ""
+    #body = text
+    #if text.startswith("---"):
+    #    _, fm, body = text.split("---", 2)   # 头尾两个 --- 之间是 frontmatter
+    #    meta = yaml.safe_load(fm) or {}
+    #    name = meta.get("name", "")
+    #    description = meta.get("description", "")
+    #return Skill(name=name, description=description, body=body.strip(), path=path)
+    name = description = ""
+    body = text
+    
+    if text.startswith("---"):
+        # 头尾两个 --- 之间是 frontmatter
+        # 用 split("---", 2) 切分后：
+        # _ 是第一个 --- 之前的内容（通常为空白）
+        # fm 是两个 --- 之间的 frontmatter 文本
+        # body 是第二个 --- 之后的所有正文
+        _, fm, body = text.split("---", 2)
+        
+        # 手写解析 frontmatter 文本（模拟 yaml.safe_load）
+        meta = {}
+        for line in fm.split("\n"):
+            if ":" in line:
+                key, value = line.split(":", 1)
+                meta[key.strip()] = value.strip()
+                
+        name = meta.get("name", "")
+        description = meta.get("description", "")
+        
+    # 完全对齐图片中的骨架参数返回
+    return Skill(name=name, description=description, body=body.strip(), path=path)
 
 def load_skills(root: str = "skills") -> list[Skill]:
     """扫描 root 下所有 SKILL.md。"""

@@ -7,11 +7,9 @@ from __future__ import annotations
 from .base import Tool
 import subprocess
 from pathlib import Path
+
 # --- edit：三种策略权衡（整文件重写 / unified diff / search-replace）---
 def _edit(path: str, old: str = "", new: str = "") -> str:
-    # TODO[Day6] 先实现最稳的 search-replace（old 在文件中唯一时替换为 new）
-    #            进阶：支持 unified diff / 整文件重写，比较失败率
-    #raise NotImplementedError("Day6：实现 edit")
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
     count = text.count(old)
@@ -22,11 +20,10 @@ def _edit(path: str, old: str = "", new: str = "") -> str:
     with open(path, "w", encoding="utf-8") as f:
         f.write(text.replace(old, new, 1))
     return f"已在 {path} 完成 1 处替换。"
-max_lines = 999999999
+
+
 # --- grep：基于 ripgrep ---
-def _grep(pattern: str, path: str = ".") -> str:
-    # TODO[Day6] 调用系统 rg，返回匹配行（带文件名+行号）。与 glob 互补：grep 搜内容，glob 搜路径
-    #raise NotImplementedError("Day6：实现 grep")
+def _grep(pattern: str, path: str = ".", max_lines: int = 100) -> str:
     try:
         p = subprocess.run(
             ["rg", "--line-number", "--no-heading", pattern, path],
@@ -42,11 +39,10 @@ def _grep(pattern: str, path: str = ".") -> str:
     if len(lines) > max_lines:
         return "\n".join(lines[:max_lines]) + f"\n... [共 {len(lines)} 行，已截断前 {max_lines} 行]"
     return "\n".join(lines)
-max_items = 999999
+
+
 # --- glob：按文件名模式找文件 ---
-def _glob(pattern: str) -> str:
-    # TODO[Day6] 用 pathlib.Path().glob / rglob 找路径
-    #raise NotImplementedError("Day6：实现 glob")
+def _glob(pattern: str, max_items: int = 100) -> str:
     paths = [str(p) for p in Path(".").rglob(pattern) if p.is_file()]
     if not paths:
         return f"[无匹配] pattern={pattern}"
@@ -54,10 +50,16 @@ def _glob(pattern: str) -> str:
         return "\n".join(paths[:max_items]) + f"\n... [共 {len(paths)} 个，已截断前 {max_items} 个]"
     return "\n".join(paths)
 
+
 # --- web_fetch：URL -> markdown，控 token 预算 ---
 def _web_fetch(url: str, max_tokens: int = 2000) -> str:
-    # TODO[Day7] httpx 抓取 -> markdownify 转 markdown -> 截断到预算内
-    raise NotImplementedError("Day7：实现 web_fetch")
+    import httpx
+    from markdownify import markdownify as md
+    from agent.context import truncate_observation
+    resp = httpx.get(url, timeout=20, follow_redirects=True)
+    resp.raise_for_status()
+    text = md(resp.text)                     # HTML -> markdown
+    return truncate_observation(text, max_chars=max_tokens * 4)
 
 
 # --- task_list（TodoWrite）：自维护待办，提升长任务成功率 ---

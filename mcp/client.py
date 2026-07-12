@@ -25,20 +25,42 @@ class MCPClient:
         self._id = 0
 
     def start(self) -> None:
-        # TODO[Day8] 启动子进程，stdin/stdout 接管，做 initialize 握手
-        raise NotImplementedError("Day8：实现 stdio transport + initialize")
+        self.proc = subprocess.Popen(
+            self.command,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            text=True, bufsize=1,          # 行缓冲，配合一行一条消息
+        )
+        self._rpc("initialize", {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "mini-openclaw", "version": "0.1"},
+        })
+        self._notify("notifications/initialized")   # 通知，无需等 result
 
     def _rpc(self, method: str, params: dict | None = None) -> Any:
-        # TODO[Day8] 发一条 JSON-RPC 请求（带自增 id），读回对应响应
-        raise NotImplementedError("Day8：实现 JSON-RPC 收发")
+        self._id += 1
+        req = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}}
+        self.proc.stdin.write(json.dumps(req) + "\n")
+        self.proc.stdin.flush()
+        line = self.proc.stdout.readline()
+        resp = json.loads(line)
+        if "error" in resp:
+            raise RuntimeError(resp["error"])
+        return resp["result"]
+
+    def _notify(self, method: str, params: dict | None = None) -> None:
+        req = {"jsonrpc": "2.0", "method": method, "params": params or {}}  # 无 id
+        self.proc.stdin.write(json.dumps(req) + "\n")
+        self.proc.stdin.flush()
 
     def list_tools(self) -> list[dict]:
-        # TODO[Day8] 调 tools/list，返回工具描述列表
-        raise NotImplementedError("Day8：实现 tools/list")
+        return self._rpc("tools/list")["tools"]
 
     def call_tool(self, name: str, arguments: dict) -> str:
-        # TODO[Day8] 调 tools/call，返回结果文本
-        raise NotImplementedError("Day8：实现 tools/call")
+        result = self._rpc("tools/call", {"name": name, "arguments": arguments})
+        parts = [c.get("text", "") for c in result.get("content", []) if c.get("type") == "text"]
+        return "\n".join(parts)
+
 
 
 def register_mcp_tools(registry: ToolRegistry, client: MCPClient) -> None:
