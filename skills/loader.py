@@ -29,6 +29,7 @@ class Skill:
 
 
 def parse_skill_md(text: str, path: Path) -> Skill:
+
     import yaml
     name = description = ""
     body = text
