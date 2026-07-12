@@ -7,7 +7,7 @@ from __future__ import annotations
 from .base import Tool
 import subprocess
 from pathlib import Path
-import base64
+
 
 # --- edit：三种策略权衡（整文件重写 / unified diff / search-replace）---
 def _edit(path: str, old: str = "", new: str = "") -> str:
