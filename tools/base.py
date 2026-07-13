@@ -72,6 +72,13 @@ def build_default_registry() -> ToolRegistry:
     #
     # TODO[Day7] 再加入：
     from .more_tools import web_fetch_tool
-    reg.register(web_fetch_tool)    
+    reg.register(web_fetch_tool)
     # from .more_tools import web_fetch_tool, task_list_tool
+    #
+    # Day9: 教师评价搜索工具（teacher-eval-search skill）
+    from .teacher_search import teacher_search_tool
+    reg.register(teacher_search_tool)
+    # Day9+: 课程 GPA 搜索工具
+    from .course_search import course_search_tool
+    reg.register(course_search_tool)
     return reg
