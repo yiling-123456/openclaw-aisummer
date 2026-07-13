@@ -75,8 +75,8 @@ grep -rn "TODO\[Day" . --include="*.py"
 这是该课程项目的核心领域应用，包含两大工具和安全校验模块：
 
 - **teacher_search**：搜索本地教师评价数据库（CSV 文件），返回指定教师的学生评价原文。每条评价含全局唯一序号 `[#N]`，输出时必须用 `@N+关键词@` 格式引用。
-- **course_search**：搜索本地教师 GPA 数据库（gpa.json），根据课程名称查找所有授课教师及其 GPA 量化数据。支持模糊搜索、按评价人数过滤、按 GPA 降序排列对比。
-- **safety.py**（`skills/teacher-eval-search/safety.py`）：引用安全校验。后处理检查 `@序号+关键词@` 标签：校验序号是否存在、关键词是否出现在对应原文中、检测缺少引用的评价性语句。由 `verify_citations()` 和 `check_uncited_claims()` 实现。
+- **course_search**：根据课程名称查找所有授课教师。支持模糊搜索、按评价人数过滤。
+- **safety.py**（`skills/teacher-eval-search/safety.py`）：引用安全校验。后处理检查 `@序号+关键词@` 标签：校验序号是否存在、关键词是否出现在对应原文中、检测缺少引用的评价性语句。校验失败时原地标注 ⚠️ 警告而不删除内容。由 `verify_citations()` 和 `check_uncited_claims()` 实现。
 - **search_engine.py**（`skills/teacher-eval-search/search_engine.py`）：扫描本地 CSV 数据，构建内存索引。单例模式，230k+ 条评论只索引一次。数据目录以 `chalaoshi_csv` 开头自动发现。
 
 ## 评测系统

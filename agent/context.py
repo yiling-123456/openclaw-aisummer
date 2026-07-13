@@ -92,7 +92,7 @@ def maybe_compact(
     ]
 
 
-def truncate_observation(text: str, max_chars: int = 4000) -> str:
+def truncate_observation(text: str, max_chars: int = 12000) -> str:
     """工具结果过长时截断并提示。"""
     if len(text) <= max_chars:
         return text

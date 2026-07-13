@@ -1,0 +1,5 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: rich in C:\Users\yilin\AppData\Roaming\Python\Python314\site-packages (15.0.0)
+Requirement already satisfied: markdown-it-py>=2.2.0 in C:\Users\yilin\AppData\Roaming\Python\Python314\site-packages (from rich) (4.2.0)
+Requirement already satisfied: pygments<3.0.0,>=2.13.0 in C:\Users\yilin\AppData\Roaming\Python\Python314\site-packages (from rich) (2.20.0)
+Requirement already satisfied: mdurl~=0.1 in C:\Users\yilin\AppData\Roaming\Python\Python314\site-packages (from markdown-it-py>=2.2.0->rich) (0.1.2)

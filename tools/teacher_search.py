@@ -20,7 +20,7 @@ from search_engine import get_engine  # noqa: E402
 from safety import verify_citations  # noqa: E402
 
 
-def _teacher_search(teachers: str, department: str = "", max_reviews: int = 100) -> str:
+def _teacher_search(teachers: str, department: str = "", max_reviews: int = 200) -> str:
     """搜索一位或多位教师的评价数据。
 
     Args:
@@ -92,7 +92,7 @@ teacher_search_tool = Tool(
             },
             "max_reviews": {
                 "type": "integer",
-                "description": "最多返回多少条评价原文，默认 100。评价较多时会被截断。",
+                "description": "最多返回多少条评价原文，默认 200。评价较多时会被截断。评价按日期降序排列，优先返回近期评价。",
             },
         },
         "required": ["teachers"],

@@ -4,6 +4,7 @@ pydantic>=2.0        # 工具 schema 校验
 
 # --- Day7 web_fetch 工具 ---
 markdownify>=0.13    # web_fetch: HTML -> markdown
+rich>=13             # 终端 Markdown 渲染，让输出更美观
 # ripgrep(rg) 请用系统包管理器安装：brew install ripgrep / apt install ripgrep（Day6 grep 工具）
 
 # --- Day8 MCP（可选，最小客户端可不依赖官方 SDK）---

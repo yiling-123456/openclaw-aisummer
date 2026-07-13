@@ -39,6 +39,10 @@ class TeacherSearchEngine:
     ) -> dict[str, Any]:
         """按教师姓名搜索，返回结构化结果。
 
+        评价按日期降序排列，优先返回近期评价。max_reviews 在所有匹配教师间
+        公平分配（每位教师保底至少返回 1 条近期评价），不会因为排在前面
+        的教师评价过多而忽略后面的教师。
+
         Args:
             teachers: 要查询的教师姓名列表（大小写不敏感、子串匹配）。
             department: 可选，按院系过滤（子串匹配 CSV 文件名）。
@@ -56,51 +60,92 @@ class TeacherSearchEngine:
         if not self._indexed:
             self._build_index()
 
-        results: dict[str, Any] = {"teachers": {}, "total_matches": 0, "truncated": False}
-        total_review_count = 0
+        # ── 第一遍：发现所有匹配教师 + 收集全局 ID ──────────────
+        teacher_ids_map: dict[str, list[int]] = {}  # name → [global_id, ...]
 
         for query_name in teachers:
             q = query_name.strip().lower()
             matched_names = [n for n in self.teacher_index if q in n.lower()]
-            if not matched_names:
-                continue
-
             for name in matched_names:
-                global_ids = self.teacher_index[name]
-
-                # 院系过滤
+                gids = self.teacher_index[name]
                 if department:
-                    global_ids = [
-                        gid for gid in global_ids
+                    gids = [
+                        gid for gid in gids
                         if department.lower() in self.reviews[gid]["department"].lower()
                     ]
-                    if not global_ids:
-                        continue
+                if not gids:
+                    continue
+                if name not in teacher_ids_map:
+                    teacher_ids_map[name] = []
+                teacher_ids_map[name].extend(gids)
 
-                if name not in results["teachers"]:
-                    results["teachers"][name] = self._teacher_summary(name, global_ids)
+        # ── 初始化结果（先建好所有教师的摘要结构） ──────────────
+        results: dict[str, Any] = {"teachers": {}, "total_matches": 0, "truncated": False}
 
-                # 追加评价原文（遵守 max_reviews 上限）
-                teacher_entry = results["teachers"][name]
-                for gid in global_ids:
-                    if total_review_count >= max_reviews:
-                        results["truncated"] = True
+        for name, gids in teacher_ids_map.items():
+            results["teachers"][name] = self._teacher_summary(name, gids)
+
+        if not results["teachers"]:
+            return results
+
+        # ── 第二遍：公平分配，挑近期评价 ──────────────────────
+        teacher_count = len(results["teachers"])
+        # 每位教师保底至少 1 条；余下额度按"review_count 占比"加权分配
+        floor = min(1, max_reviews // max(teacher_count, 1))
+        remaining_budget = max(0, max_reviews - floor * teacher_count)
+
+        # 计算总评价数用于加权
+        total_all = sum(
+            results["teachers"][n]["review_count"] for n in results["teachers"]
+        )
+
+        allocations: dict[str, int] = {}
+        for name, entry in results["teachers"].items():
+            alloc = floor
+            if remaining_budget > 0 and total_all > 0:
+                weighted = int(
+                    remaining_budget * entry["review_count"] / total_all
+                )
+                alloc += weighted
+            allocations[name] = min(alloc, entry["review_count"])
+
+        # 多退少补：如果还有剩余额度，按顺序补给未满的教师
+        leftover = max_reviews - sum(allocations.values())
+        if leftover > 0:
+            for name in results["teachers"]:
+                cap = results["teachers"][name]["review_count"]
+                if allocations[name] < cap:
+                    give = min(leftover, cap - allocations[name])
+                    allocations[name] += give
+                    leftover -= give
+                    if leftover <= 0:
                         break
-                    if gid not in teacher_entry["_seen_ids"]:
-                        teacher_entry["_seen_ids"].add(gid)
-                        teacher_entry["reviews"].append(self.reviews[gid])
-                        total_review_count += 1
 
-                if results["truncated"]:
+        # ── 第三遍：取每位教师最晚（近期）的 N 条评价 ──────────
+        total_review_count = 0
+        for name, entry in results["teachers"].items():
+            limit = allocations.get(name, 0)
+            if limit <= 0:
+                continue
+
+            # 按日期降序排列，取最近的 limit 条
+            sorted_gids = sorted(
+                teacher_ids_map[name],
+                key=lambda gid: self.reviews[gid]["date"],
+                reverse=True,
+            )
+            for gid in sorted_gids:
+                if len(entry["reviews"]) >= limit:
                     break
-
-            if results["truncated"]:
-                break
+                entry["reviews"].append(self.reviews[gid])
+                total_review_count += 1
 
         # 清理内部字段
         for entry in results["teachers"].values():
             entry.pop("_seen_ids", None)
+
         results["total_matches"] = len(results["teachers"])
+        results["truncated"] = total_review_count >= max_reviews
         return results
 
     def get_review_by_id(self, review_id: int) -> dict[str, Any] | None:

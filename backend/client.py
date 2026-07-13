@@ -34,12 +34,13 @@ class DeepSeekBackend:
         self._client = httpx.Client(timeout=timeout)
 
     def chat(self, messages: list[dict[str, Any]], tools: list[dict] | None = None,
-             temperature: float = 0.0) -> dict[str, Any]:
+             temperature: float = 0.0, max_tokens: int = 16384) -> dict[str, Any]:
         """一次（非流式）对话补全，返回归一化的 assistant 消息。"""
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": self._to_openai_messages(messages),
             "temperature": temperature,
+            "max_tokens": max_tokens,
         }
         if tools:
             payload["tools"] = tools           # OpenAI tools 格式，base.Tool.schema() 已生成
