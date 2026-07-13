@@ -70,10 +70,10 @@ def build_default_registry() -> ToolRegistry:
     for t in (edit_tool, grep_tool, glob_tool):
         reg.register(t)
     #
-    # TODO[Day7] 再加入：
-    from .more_tools import web_fetch_tool
+    # D7: web_fetch + task_list
+    from .more_tools import web_fetch_tool, task_list_tool
     reg.register(web_fetch_tool)
-    # from .more_tools import web_fetch_tool, task_list_tool
+    reg.register(task_list_tool)
     #
     # Day9: 教师评价搜索工具（teacher-eval-search skill）
     from .teacher_search import teacher_search_tool
@@ -81,4 +81,8 @@ def build_default_registry() -> ToolRegistry:
     # Day9+: 课程教师搜索工具（查询某课程有哪些授课教师）
     from .course_search import course_search_tool
     reg.register(course_search_tool)
+    # D7/D10: 跨会话记忆工具
+    from .memory_tools import save_memory_tool, recall_memory_tool, forget_memory_tool, list_memories_tool
+    for t in (save_memory_tool, recall_memory_tool, forget_memory_tool, list_memories_tool):
+        reg.register(t)
     return reg

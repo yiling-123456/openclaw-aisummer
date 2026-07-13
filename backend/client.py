@@ -52,14 +52,27 @@ class DeepSeekBackend:
             json=payload,
         )
         if resp.is_error:
+            # 安全：截断错误响应，防止 token/sensitive 信息泄露到终端
+            _body = (resp.text or "")[:500]
             print("\n===== DeepSeek API 请求失败 =====")
             print("状态码：", resp.status_code)
-            print("响应正文：", resp.text)
-            print("================================\n")
+            print("响应正文（截断前500字符）：", _body)
+            print("================================")
+            if len(resp.text or "") > 500:
+                print("[提示] 完整响应已省略，避免敏感信息泄露。")
 
         resp.raise_for_status()
-        msg = resp.json()["choices"][0]["message"]
-        return self._normalize(msg)
+        data = resp.json()
+        msg = data["choices"][0]["message"]
+        result = self._normalize(msg)
+        # 保留 token 用量信息（供 tracer 使用）
+        usage = data.get("usage", {})
+        result["usage"] = {
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+        }
+        return result
 
     # --- 把内部 messages（含 role=tool）转成 OpenAI 标准格式 ---
     def _to_openai_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

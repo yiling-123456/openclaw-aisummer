@@ -15,9 +15,10 @@ class FakeBackend:
 
     def chat(self, messages: list[dict[str, Any]], tools: list[dict] | None = None) -> dict[str, Any]:
         last = messages[-1]["content"] if messages else ""
+        usage = {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70}
         # 如果上一条是工具结果（observation），就给最终答复
         if messages and messages[-1].get("role") == "tool":
-            return {"role": "assistant", "content": f"[FakeBackend] 已根据工具结果完成：{last[:60]}", "tool_calls": []}
+            return {"role": "assistant", "content": f"[FakeBackend] 已根据工具结果完成：{last[:60]}", "tool_calls": [], "usage": usage}
 
         # 否则，如果有可用工具且用户像是要做事，假装调一个工具
         if tools and any(k in str(last) for k in ("文件", "运行", "file", "run", "hello")):
@@ -26,5 +27,6 @@ class FakeBackend:
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [{"name": name, "arguments": {}}],
+                "usage": usage,
             }
-        return {"role": "assistant", "content": "[FakeBackend] 你好，我是离线占位后端。配好 DEEPSEEK_API_KEY 即用真模型。", "tool_calls": []}
+        return {"role": "assistant", "content": "[FakeBackend] 你好，我是离线占位后端。配好 DEEPSEEK_API_KEY 即用真模型。", "tool_calls": [], "usage": usage}
