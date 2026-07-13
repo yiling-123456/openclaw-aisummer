@@ -16,6 +16,7 @@ conda create -n openclaw python=3.11 && conda activate openclaw
 pip install -r requirements.txt
 
 # 骨架自检 — 验证所有模块可导入 + FakeBackend 正常
+
 python -m agent.cli --selfcheck
 
 # 运行智能体（需要 DEEPSEEK_API_KEY 环境变量；未配 key 自动回退 FakeBackend）
@@ -51,21 +52,23 @@ grep -rn "TODO\[Day" . --include="*.py"
           └─ 无 tool_calls → 返回 content 作为最终答案
 ```
 
-**重要**：`prompt/render.py` 的 `render_prompt()` 和 `parse_tool_calls()` 是 Day3 的**学习练习**（理解 tokenization 和模板渲染），但**未接入主循环**。主循环通过 `DeepSeekBackend` 直接调用 OpenAI 兼容 API，工具调用解析由 `DeepSeekBackend._normalize()` 完成。
+**关键事实**：`prompt/render.py` 中的 `render_prompt()` 和 `parse_tool_calls()` 是 Day3 的**学习练习**（理解 tokenization 和模板渲染），但**未接入主循环**。主循环通过 `DeepSeekBackend` 直接调用 OpenAI 兼容 API，工具调用解析由 `DeepSeekBackend._normalize()` 完成，不依赖手动 `<tool_call>` 标签解析。
 
 ### 模块间接口约定
 
-- **Backend → Loop**：`chat(messages, tools) -> dict` 返回归一化格式 `{"role": "assistant", "content": str, "tool_calls": [{"id": str, "name": str, "arguments": dict}]}`。`DeepSeekBackend` 和 `FakeBackend` 都遵循此接口。`backend/server.py` 已弃用。
-- **Tool → Loop**：`Tool` 数据类（name / description / parameters / run）。`run(**arguments) -> str` 返回文本 observation，由主循环以 `role="tool"` 注入消息历史。
-- **MCP 集成**：MCP 工具以 `mcp__` 前缀注册到同一个 ToolRegistry，对主循环透明。CLI 启动时自动连接 echo MCP server 和官方 filesystem MCP server（通过 npx）。MCP 客户端通过 stdio + JSON-RPC 与 server 通信。
-- **上下文管理**：`agent/context.py` 的 `maybe_compact()` 在超 token 预算时将早期消息摘要为 system 备忘；`truncate_observation()` 截断过长工具结果。`estimate_tokens()` 使用字符数/4 粗估。
-- **Skills 格式**：YAML frontmatter（name + description）+ Markdown 正文。`skills/loader.py` 扫描 `*/SKILL.md`，生成可注入系统提示词的能力清单。Skill 不同于 Tool——它是一包领域知识和工作流程，而非单次函数调用。
+**Backend → Loop**：`chat(messages, tools) -> dict` 返回归一化格式：
+```python
+{"role": "assistant", "content": str, "tool_calls": [{"id": str, "name": str, "arguments": dict}]}
+```
+`DeepSeekBackend`（真实 API，`backend/client.py`）和 `FakeBackend`（离线开发，`backend/fake_backend.py`）都遵循此接口。`backend/server.py` 已弃用（原计划本地部署 GLM，后改为直接调 DeepSeek API）。
 
 ### 关键设计模式
 
-- **ToolRegistry**：工具按名称注册的字典，提供 `register()`、`get()`、`schemas()`。`build_default_registry()` 是工厂函数，在 `tools/base.py` 中按课程进度逐步取消注释以激活各工具。
-- **当前已激活的工具**：read、write、bash、edit、grep、glob、web_fetch、teacher_search、course_search（task_list 仍为 `NotImplementedError`）。
-- **系统提示词**：`agent/prompts.py` 包含完整的工作准则、工具说明和正/负面示例。CLI 启动时会将 skill 目录追加入系统提示词。
+**MCP 集成**（Day8）：MCP 工具以 `mcp__` 前缀注册到同一个 ToolRegistry，对主循环透明。`agent/cli.py` 启动时自动连接 echo MCP server（`mcp/echo_server.py`）和官方 filesystem MCP server（通过 npx）。MCP 客户端通过 stdio + JSON-RPC 与 server 通信。
+
+**SKILL.md 格式**：YAML frontmatter（name + description）+ Markdown 正文。`skills/loader.py` 扫描 `*/SKILL.md`，生成可注入系统提示词的能力清单。Skill 不同于 Tool——它是一包领域知识和工作流程，而非单次函数调用。当前有两个 skill：`example-skill`（CSV 报告示例）和 `teacher-eval-search`（教师评价检索，含引用注入与安全拦截流程）。
+
+**上下文管理**（`agent/context.py`，Day7）：`maybe_compact()` 在超 token 预算时将早期消息摘要为 system 备忘（保留 system prompt + 最近 4 条原文）；`truncate_observation()` 截断过长的工具结果。`estimate_tokens()` 使用字符数/4 粗估。
 
 ## 教师评价搜索领域（Day9+ 特色功能）
 
@@ -78,11 +81,8 @@ grep -rn "TODO\[Day" . --include="*.py"
 
 ## 评测系统
 
-- **eval/tasks.py**：任务定义。`ToolCallCase`（单步工具调用测试用例）和 `E2ETask`（端到端任务）两种粒度。`Task` 类包含程序化成功判据（`check(trajectory) -> bool`）。
-- **eval/tracer.py**：轨迹记录器。写 JSONL 日志文件（每步记录 tool_calls、token 计数等），支持 `replay()` 回放。
-- **eval/metrics.py**：三项指标——JSON 合法率、工具选择正确率、参数正确率、成功率、平均步数、平均 token 数。
-- **eval/judge.py**：LLM-as-judge。按固定 rubric（1-5 分）给一个答复打分。
-- **eval/ablation.py**：最小消融实验框架。有/无 system-prompt 两组样本轨迹的成功率对比。
+- **ToolRegistry**：工具按名称注册的字典，提供 `register()`、`get()`、`schemas()`。`build_default_registry()` 是工厂函数，随课程推进逐步取消注释以激活各工具。当前已激活：read、write、bash、edit、grep、glob、web_fetch（task_list 仍为 NotImplementedError）。
+- **系统提示词**：`agent/prompts.py` 中的 `SYSTEM_PROMPT` 已包含完整的工作准则、工具说明和正/负面示例。CLI 启动时会将 skill 目录追加入系统提示词。
 
 ## 环境变量
 
@@ -92,28 +92,15 @@ grep -rn "TODO\[Day" . --include="*.py"
 | `DEEPSEEK_BASE_URL` | API 地址 | `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | 模型名称 | `deepseek-chat` |
 
-## 各模块完成状态与 TODO 分布
+## 目录结构与逐日构建节奏
 
-| 模块 | 关键交付 | 状态 | 剩余 TODO |
-|------|---------|------|-----------|
-| `backend/` | DeepSeek API 客户端 + FakeBackend | ✅ 已完成 | 0 |
-| `prompt/` | 模板渲染 + 工具调用解析 | ❌ 未实现（学习练习，未接入主循环） | 6 |
-| `agent/` | 系统提示词 + ReAct 主循环 + 上下文管理 | ✅ 基础实现完成 | system prompt (2), loop (3), context (2) |
-| `tools/` | read/write/bash/edit/grep/glob/web_fetch + teacher_search + course_search | ✅ 9 个工具已实现 | task_list (1), 建议拆文件 (1) |
-| `mcp/` | 最小 MCP 客户端 + echo server | ✅ 已实现 | 0（原 4 个 TODO 已补完） |
-| `skills/` | Skill 加载器 + teacher-eval-search + csv-quick-report | ✅ 加载器已实现，skill 已存在 | 2（loader 中) |
-| `eval/` | 评测 + 消融 | 🟡 框架就绪 | tasks (4), metrics (2) |
-| **合计** | | | **~32 个** |
-
-## 添加新工具的流程
-
-1. 在 `tools/` 下新建文件（或追加到 `tools/more_tools.py`），定义 Tool 实例
-2. 在 `tools/base.py` 的 `build_default_registry()` 中注册
-3. 在 `agent/prompts.py` 的 `SYSTEM_PROMPT` 中添加工具说明
-4. 如需 MCP 接入，参考 `mcp/client.py` 的 `register_mcp_tools()`
-
-## 添加新 Skill 的流程
-
-1. 在 `skills/` 下创建新目录，内建 `SKILL.md`
-2. SKILL.md 需包含 YAML frontmatter（name + description）+ Markdown 正文
-3. CLI 启动时 `skills/loader.py` 会自动扫描并注入系统提示词
+| 天 | 模块 | 关键交付 | 状态 |
+|---|------|---------|------|
+| Day1–2 | `backend/` | API 客户端跑通，FakeBackend 可用 | `client.py` 已实现，`server.py` 已弃用 |
+| Day3 | `prompt/` | `render_prompt` + `parse_tool_calls` 手动实现 | 未实现（raise NotImplementedError），未接入主循环 |
+| Day5 | `agent/` + `tools/` | ReAct 主循环 + read/write/bash 工具 | 已实现并接入 |
+| Day6 | `tools/` | edit/grep/glob → v1 里程碑 | 已实现并接入 |
+| Day7 | `agent/` + `tools/` | 上下文管理 + web_fetch | compaction 已实现；web_fetch 已接入；task_list 未实现 |
+| Day8 | `mcp/` | MCP 客户端（stdio + JSON-RPC）| 已实现，CLI 启动时自动连接 |
+| Day9 | `skills/` | 技能加载器 + 自定义领域 Skill | 加载器已实现；example-skill 和 teacher-eval-search 已存在 |
+| Day10 | `eval/` | 评测 + 安全层 → 终版 | tracer/metrics/judge/ablation 已实现；E2E tasks 待补充 |

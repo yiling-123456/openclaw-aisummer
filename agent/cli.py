@@ -1,13 +1,11 @@
 """命令行入口。
 
 用法：
-  python -m agent.cli --selfcheck                                  # Day1：自检骨架是否装好
-  python -m agent.cli "创建 hello.py 并运行"                         # Day5 起：真正跑任务
-  python -m agent.cli "介绍张老师" -a                                # 展示完整模型输出含引用验证标记
+  python -m agent.cli --selfcheck          # Day1：自检骨架是否装好
+  python -m agent.cli "创建 hello.py 并运行"  # Day5 起：真正跑任务（v1 在 Day6）
 """
 from __future__ import annotations
 import argparse
-import os
 import sys
 
 from tools.base import build_default_registry
@@ -45,8 +43,6 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="mini-openclaw")
     p.add_argument("task", nargs="?", help="要让 agent 完成的任务（自然语言）")
     p.add_argument("--selfcheck", action="store_true", help="只做骨架自检")
-    p.add_argument("-a", "--show-all", action="store_true",
-                    help="显示完整模型输出（含引用验证错误标记）")
     args = p.parse_args(argv)
 
     if args.selfcheck or not args.task:
@@ -92,24 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     skills = load_skills()
     system = SYSTEM_PROMPT + "\n\n# 可用 Skills（相关时按其流程执行）\n" + skills_catalog(skills)
     agent = AgentLoop(backend, reg, system)
-    result = agent.run(args.task)
-
-    # ── 引用安全后处理（仅在教师评价数据存在时生效） ──
-    # 将 skills/teacher-eval-search 加入 sys.path（teacher_search.py 做过同样的操作）
-    _skill_dir = os.path.join(os.path.dirname(__file__), "..", "skills", "teacher-eval-search")
-    _skill_dir = os.path.abspath(_skill_dir)
-    if _skill_dir not in sys.path:
-        sys.path.insert(0, _skill_dir)
-
-    try:
-        from search_engine import get_engine  # noqa: E402
-        from safety import postprocess_citations  # noqa: E402
-        engine = get_engine()
-        result = postprocess_citations(result, engine, show_all=args.show_all)
-    except Exception:
-        pass  # 无教师数据目录或模块不可用 → 原样输出
-
-    print(result)
+    print(agent.run(args.task))
     return 0
 
 
