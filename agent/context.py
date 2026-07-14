@@ -12,8 +12,19 @@ from typing import Any
 
 
 def estimate_tokens(messages: list[dict[str, Any]]) -> int:
-    # TODO[Day7] 粗估即可（字符数/4 或用 tokenizer 精确数）
-    return sum(len(str(m.get("content", ""))) for m in messages) // 4
+    """估算 messages 的 token 数。优先使用 tiktoken，失败则回退 chars/4 粗估。"""
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        total = 0
+        for m in messages:
+            content = str(m.get("content", ""))
+            total += len(enc.encode(content))
+            # 每条消息附加 ~4 tokens 的格式开销（role + 分隔符）
+            total += 4
+        return total
+    except (ImportError, Exception):
+        return sum(len(str(m.get("content", ""))) for m in messages) // 4
 
 def maybe_compact(
     messages: list[dict[str, Any]],

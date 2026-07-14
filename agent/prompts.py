@@ -72,10 +72,10 @@ SYSTEM_PROMPT = """
    - 保存跨会话记忆。用于记住用户偏好（"用户喜欢简洁输出"）、项目约定（"测试文件放在 tests/ 下"）、重要发现等。
    - 记忆会在下次启动 agent 时自动加载到系统提示词中。
 
-12. recall_memory
+14. recall_memory
    - 按关键词搜索之前保存的记忆。开始新任务时应先检查有无相关历史记忆。
 
-14. list_memories / forget_memory
+15. list_memories / forget_memory
    - 查看所有已保存的记忆，或删除不再需要的记忆。
 
 工作准则：
@@ -148,8 +148,4 @@ SYSTEM_PROMPT = """
 最终答复示例：
 已创建 hello.py，并通过运行 python hello.py 验证成功，程序输出：
 Hello, OpenClaw
-"""
-"""
-# TODO[Day5] 在此补充：工具列表说明、正/负面示例、领域相关的行为约束。
-# TODO[Day7] 长任务时引导模型使用 task_list 维护待办。
 """

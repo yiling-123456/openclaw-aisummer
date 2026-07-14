@@ -44,7 +44,13 @@ def selfcheck() -> int:
 
 
 def _postprocess_result(result: str, show_all: bool = False) -> str:
-    """对模型输出进行引用安全后处理（仅在教师评价数据存在时生效）。"""
+    """对模型输出进行引用安全后处理（仅在教师评价数据存在时生效）。
+
+    默认模式下总是去掉 @引用@ 标签，确保用户看到干净的输出：
+    - 有搜索引擎数据 → 校验引用真实性，通过则去掉标签，失败则标 ⚠️
+    - 无搜索引擎数据 → 直接去掉 @引用@ 标签（无法校验，但保证输出干净）
+    - -a 模式下保留完整标签供调试
+    """
     import os as _os, sys as _sys
     _skill_dir = _os.path.join(_os.path.dirname(__file__), "..", "skills", "teacher-eval-search")
     _skill_dir = _os.path.abspath(_skill_dir)
@@ -53,11 +59,15 @@ def _postprocess_result(result: str, show_all: bool = False) -> str:
 
     try:
         from search_engine import get_engine  # noqa: E402
-        from safety import postprocess_citations  # noqa: E402
+        from safety import postprocess_citations, _CITATION_RE  # noqa: E402
         engine = get_engine()
         return postprocess_citations(result, engine, show_all=show_all)
     except Exception:
-        return result  # 无教师数据目录或模块不可用 → 原样输出
+        # 搜索引擎完全不可用时：默认模式去掉 @引用@ 标签，-a 模式保留
+        if not show_all:
+            import re as _re
+            result = _re.sub(r"@(\d+)\+(.+?)@", "", result)
+        return result
 
 
 def interactive(backend, registry, system_prompt, tracer=None, show_all: bool = False) -> int:
@@ -296,6 +306,11 @@ def _interactive_plain(backend, registry, system_prompt, tracer=None, show_all: 
                     if content:
                         content = _postprocess_result(content, show_all=show_all)
                         print(content)
+                    # ── 成本显示 ──
+                    try:
+                        print(tracer.cost_summary())
+                    except Exception:
+                        pass
                     print()
                 elif event_type == "error":
                     print(f"  [ERROR] {data['message']}")
@@ -405,6 +420,8 @@ def main(argv: list[str] | None = None) -> int:
         agent = AgentLoop(backend, reg, system, tracer=tracer)
         result = agent.run(args.task)
         print(f"\n[可观测] 轨迹已保存至 {_trace_path}（可通过 eval.tracer.replay 回放）")
+        # ── 成本显示 ──
+        print(tracer.cost_summary())
 
         # ── 引用安全后处理（仅在教师评价数据存在时生效） ──
         result = _postprocess_result(result, show_all=args.show_all)

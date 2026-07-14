@@ -50,6 +50,17 @@ def load_skills(root: str = "skills") -> list[Skill]:
 
 
 def skills_catalog(skills: list[Skill]) -> str:
-    """生成给模型看的可用 skill 清单（name + description），用于按需召回。"""
-    # TODO[Day9] 渲染成一段文本，放进系统提示词
-    return "\n".join(f"- {s.name}: {s.description}" for s in skills)
+    """生成给模型看的可用 skill 清单（name + description + 首行摘要），用于按需召回。"""
+    if not skills:
+        return ""
+    lines = ["\n## 可用 Skills"]
+    lines.append("以下 Skill 包含领域特定的操作流程。当任务与 Skill 描述相关时，请按照对应 SKILL.md 中的步骤执行：\n")
+    for s in skills:
+        lines.append(f"- **{s.name}**: {s.description}")
+        if s.body:
+            # 提取正文首行作为摘要
+            first_line = s.body.strip().split("\n")[0].strip()
+            if first_line and not first_line.startswith("#"):
+                preview = first_line[:120]
+                lines.append(f"  > {preview}")
+    return "\n".join(lines)

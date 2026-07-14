@@ -22,6 +22,8 @@
   - 全局工具调用计数器（防止单任务无限消耗资源）
   - 高敏感工具（bash/write/edit）单独配额限制
   - 循环调用检测
+  - 权限分级：READ_ONLY / WRITE / EXECUTE / NETWORK 四级控制
+  - 注入防护：web_fetch/read 结果做 prompt injection 检测
 """
 from __future__ import annotations
 import json
@@ -31,6 +33,8 @@ from typing import Any
 from tools.base import ToolRegistry
 from agent.context import maybe_compact, truncate_observation
 from agent.planning import get_planner, reset_planner, TodoStatus
+from agent.permission import PermissionChecker, PermissionTier, TOOL_TIER_MAP
+from tools.sanitize import sanitize_observation
 
 
 # ── 安全配额 ──────────────────────────────────────────────────────
@@ -111,22 +115,74 @@ def _was_teacher_search_used(messages: list[dict[str, Any]]) -> bool:
 def _looks_like_checklist_only(content: str) -> bool:
     """检测最终输出是否只是一个进度清单，而非真正的评价报告。
 
-    特征：有 ✅ 标记、有"已完成 N/M"模式、但没有 @引用@ 标签。
-    这种输出说明模型偷懒了——它汇报了"做了什么"而不是"发现了什么"。
+    覆盖三种偷懒模式：
+    1. ✅ + 已完成/完成总结（原有逻辑）
+    2. 「已输出/已生成 X」但没有实际给出 X（"声称输出"幻觉）
+    3. 「任务完成总结」「完成总结」开头但内容极短、无引用
     """
     stripped = content.strip()
-    # 包含完成清单特征
-    has_checklist = (
+
+    # ── 模式 1：传统清单格式（✅ 标记 + 完成声明）──
+    has_checklist_emoji = (
         "✅" in stripped
         and ("已完成" in stripped or "完成总结" in stripped)
     )
-    # 缺少引用标签（真正的评价报告应该有 @N+关键词@）
+
+    # ── 模式 2：「已输出/已生成 X」但实际没有给出内容 ──
+    # 模型说"已输出完整对比报告"，但消息里没有每位教师的评价细节
+    claimed_output = (
+        ("已输出" in stripped or "已生成" in stripped or "已呈现" in stripped)
+        and ("报告" in stripped or "总结" in stripped or "对比" in stripped)
+    )
+    # 如果声称输出了报告，但：
+    #   - 没有引用标签（@N+关键词@），且
+    #   - 内容很短（< 1200 chars，真正报告远超此长度）
+    # 那就是典型的「说了做了但没做」
     has_citations = "@" in stripped and any(
         c.isdigit() for c in stripped.split("@")[1] if stripped.count("@") >= 2
     ) if "@" in stripped else False
+    claimed_but_empty = claimed_output and not has_citations and len(stripped) < 1200
+
+    # ── 模式 3：「任务完成总结」开头的简略输出 ──
+    looks_like_summary_header = (
+        stripped.startswith("任务完成总结")
+        or stripped.startswith("完成总结")
+        or stripped.startswith("# 任务完成")
+        or stripped.startswith("# 完成总结")
+    )
+    summary_too_short = looks_like_summary_header and len(stripped) < 1200
+
+    # ── 综合判断 ──
+    is_checklist = has_checklist_emoji or claimed_but_empty or summary_too_short
+
     # 太短（清单通常很短，而真实评价报告会很长）
     is_short = len(stripped) < 800
-    return has_checklist and (not has_citations or is_short)
+
+    return is_checklist and (not has_citations or is_short)
+
+
+def _build_checklist_nudge(content: str) -> str:
+    """根据偷懒类型生成针对性的提示消息。"""
+    stripped = content.strip()
+
+    if ("已输出" in stripped or "已生成" in stripped) and not (
+        "@" in stripped and any(c.isdigit() for c in stripped.split("@")[1] if stripped.count("@") >= 2)
+    ):
+        return (
+            "你说「已输出/已生成」了报告，但实际上**并没有**把详细内容写出来。\n\n"
+            "用户看到的消息里只有一句推荐结论，没有每位教师的评价细节。\n\n"
+            "请根据之前 teacher_search 返回的所有原始数据，**逐位教师**写出详细评价，包含：\n"
+            "- 教学风格\n- 作业量\n- 考试难度\n- 给分情况\n\n"
+            "每位教师的评价后必须跟 @序号+关键词@ 引用标签。\n"
+            "⚠️ 不要写「任务完成清单」或「已完成总结」，直接写评价报告正文。现在就写。"
+        )
+
+    return (
+        "你只输出了一份任务完成清单（「已完成 N 项」），但用户需要看到的是**每门课每位教师的具体评价内容**。\n\n"
+        "请根据之前 teacher_search 返回的所有数据，逐门课、逐位教师写出详细总结，"
+        "包含每位教师的教学风格、作业量、考试难度、给分情况，并使用 @序号+关键词@ 格式精确引用。\n\n"
+        "⚠️ 不要再写「任务完成清单」，直接写评价报告正文。现在就写。"
+    )
 
 
 class AgentLoop:
@@ -143,6 +199,7 @@ class AgentLoop:
         self.system_prompt = system_prompt
         self.max_turns = max_turns
         self.tracer = tracer
+        self.permission_checker = PermissionChecker()
 
     # ── 单次执行模式 ────────────────────────────────────────────
 
@@ -284,12 +341,7 @@ class AgentLoop:
                     if _was_teacher_search_used(messages) and _looks_like_checklist_only(content):
                         messages.append({
                             "role": "user",
-                            "content": (
-                                "你只输出了一份任务完成清单（「已完成 N 项」），但用户需要看到的是**每门课每位教师的具体评价内容**。\n\n"
-                                "请根据之前 teacher_search 返回的所有数据，逐门课、逐位教师写出详细总结，"
-                                "包含每位教师的教学风格、作业量、考试难度、给分情况，并使用 @序号+关键词@ 格式精确引用。\n\n"
-                                "⚠️ 不要再写「任务完成清单」，直接写评价报告正文。现在就写。"
-                            ),
+                            "content": _build_checklist_nudge(content),
                         })
                         continue
                     return content
@@ -328,12 +380,7 @@ class AgentLoop:
                 if _was_teacher_search_used(messages) and _looks_like_checklist_only(content):
                     messages.append({
                         "role": "user",
-                        "content": (
-                            "你只输出了一份任务完成清单（「已完成 N 项」），但用户需要看到的是**每门课每位教师的具体评价内容**。\n\n"
-                            "请根据之前 teacher_search 返回的所有数据，逐门课、逐位教师写出详细总结，"
-                            "包含每位教师的教学风格、作业量、考试难度、给分情况，并使用 @序号+关键词@ 格式精确引用。\n\n"
-                            "⚠️ 不要再写「任务完成清单」，直接写评价报告正文。现在就写。"
-                        ),
+                        "content": _build_checklist_nudge(content),
                     })
                     continue
                 return content
@@ -586,12 +633,7 @@ class AgentLoop:
                     if _was_teacher_search_used(messages) and _looks_like_checklist_only(content):
                         messages.append({
                             "role": "user",
-                            "content": (
-                                "你只输出了一份任务完成清单（\"已完成 N 项\"），但用户需要看到的是**每门课每位教师的具体评价内容**。\n\n"
-                                "请根据之前 teacher_search 返回的所有数据，逐门课、逐位教师写出详细总结，"
-                                "包含每位教师的教学风格、作业量、考试难度、给分情况，并使用 @序号+关键词@ 格式精确引用。\n\n"
-                                "⚠️ 不要再写\"任务完成清单\"，直接写评价报告正文。现在就写。"
-                            ),
+                            "content": _build_checklist_nudge(content),
                         })
                         continue
                     yield ("done", {
@@ -637,12 +679,7 @@ class AgentLoop:
                 if _was_teacher_search_used(messages) and _looks_like_checklist_only(content):
                     messages.append({
                         "role": "user",
-                        "content": (
-                            "你只输出了一份任务完成清单（\"已完成 N 项\"），但用户需要看到的是**每门课每位教师的具体评价内容**。\n\n"
-                            "请根据之前 teacher_search 返回的所有数据，逐门课、逐位教师写出详细总结，"
-                            "包含每位教师的教学风格、作业量、考试难度、给分情况，并使用 @序号+关键词@ 格式精确引用。\n\n"
-                            "⚠️ 不要再写\"任务完成清单\"，直接写评价报告正文。现在就写。"
-                        ),
+                        "content": _build_checklist_nudge(content),
                     })
                     continue
                 yield ("done", {
@@ -772,11 +809,25 @@ class AgentLoop:
     def _run_with_retry(
         self, tool: Any, call: dict[str, Any]
     ) -> tuple[str, bool]:
-        """执行工具，瞬时错误自动重试（指数退避）。"""
+        """执行工具，瞬时错误自动重试（指数退避）。
+        包含权限分级检查和注入防护检测。
+        """
+        # ── 权限分级检查 ──
+        tier = TOOL_TIER_MAP.get(tool.name, PermissionTier.READ_ONLY)
+        allowed, reason = self.permission_checker.check(
+            tool.name, call.get("arguments", {})
+        )
+        if not allowed:
+            return reason, False
+
         last_error = None
         for attempt in range(_MAX_RETRIES_TRANSIENT):
             try:
                 obs = tool.run(**call.get("arguments", {}))
+                # ── 注入防护检测（web_fetch / read 来源）──
+                if tool.name in ("web_fetch", "read"):
+                    source = "web" if tool.name == "web_fetch" else "file"
+                    obs = sanitize_observation(str(obs), source=source)
                 return truncate_observation(str(obs)), True
             except Exception as e:
                 last_error = e

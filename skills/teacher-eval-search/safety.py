@@ -247,13 +247,16 @@ def postprocess_citations(
     if not text:
         return text
     if not _CITATION_RE.search(text):
-        # 虽有引用标签但无法校验的场景已在前面 return 了。
-        # 走到这里意味着完全没有任何引用标签——如果是教师评价任务，
-        # 这说明模型输出缺乏必要的引用，原样返回。
         return text
-    # 没有已索引的评论数据 → 无法校验，原样返回（可能是非教师评价任务）
+
+    # 没有已索引的评论数据 → 无法校验引用真实性。
+    # 默认模式下直接去掉 @引用@ 标签（保留干净文本）；
+    # -a 模式下保留原始标签供调试。
     if not engine or not engine.reviews:
-        return text
+        if show_all:
+            return text
+        else:
+            return _CITATION_RE.sub('', text)
 
     segments = _parse_segments(text)
 
