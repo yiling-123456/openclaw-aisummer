@@ -211,7 +211,25 @@ def interactive(backend, registry, system_prompt, tracer=None, show_all: bool = 
 
         # ── 运行 Agent ──
         from agent.loop import AgentLoop
-        agent = AgentLoop(backend, registry, system_prompt, tracer=tracer)
+        from agent.permission import PermissionTier, TIER_LABELS
+        # Rich 风格的权限询问回调
+        def _rich_permission_cb(tool_name: str, tier: PermissionTier, arguments: dict) -> bool:
+            label = TIER_LABELS.get(tier, "未知")
+            args_str = json.dumps(arguments, ensure_ascii=False)
+            if len(args_str) > 120:
+                args_str = args_str[:117] + "..."
+            try:
+                resp = console.input(
+                    f"\n[yellow]⚠️ [{label}][/] Agent 要执行 [bold]{tool_name}[/]({args_str})"
+                    f"\n[yellow]是否允许？[y/N] [/]"
+                ).strip().lower()
+                return resp in ("y", "yes")
+            except (EOFError, KeyboardInterrupt):
+                return False
+        agent = AgentLoop(
+            backend, registry, system_prompt, tracer=tracer,
+            permission_callback=_rich_permission_cb,
+        )
 
         try:
             for event_type, data in agent.run_stream(task, messages):

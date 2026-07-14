@@ -37,24 +37,37 @@ TOOL_TIER_MAP: dict[str, PermissionTier] = {
     "recall_memory": PermissionTier.READ_ONLY,
     "list_memories": PermissionTier.READ_ONLY,
     "task_list": PermissionTier.READ_ONLY,
+    "todo_write": PermissionTier.READ_ONLY,
+    "todo_update": PermissionTier.READ_ONLY,
     # 写
     "write": PermissionTier.WRITE,
     "edit": PermissionTier.WRITE,
     "save_memory": PermissionTier.WRITE,
     "forget_memory": PermissionTier.WRITE,
-    "todo_write": PermissionTier.WRITE,
-    "todo_update": PermissionTier.WRITE,
     # 执行
     "bash": PermissionTier.EXECUTE,
     # 网络
     "web_fetch": PermissionTier.NETWORK,
+    # ── MCP server 工具（filesystem server）──
+    # 只读 → 自动放行
+    "mcp__echo": PermissionTier.READ_ONLY,
+    "mcp__list_allowed_directories": PermissionTier.READ_ONLY,
+    "mcp__list_directory": PermissionTier.READ_ONLY,
+    "mcp__list_directory_with_sizes": PermissionTier.READ_ONLY,
+    "mcp__directory_tree": PermissionTier.READ_ONLY,
+    "mcp__get_file_info": PermissionTier.READ_ONLY,
+    "mcp__read_file": PermissionTier.READ_ONLY,
+    "mcp__read_media_file": PermissionTier.READ_ONLY,
+    "mcp__read_multiple_files": PermissionTier.READ_ONLY,
+    "mcp__read_text_file": PermissionTier.READ_ONLY,
+    "mcp__search_files": PermissionTier.READ_ONLY,
 }
 
-# MCP 工具前缀 — 来自外部 server 的工具默认视为 EXECUTE 级别
+# MCP 工具前缀 — 不在 TOOL_TIER_MAP 中的 MCP 工具默认视为 EXECUTE 级别
 _MCP_PREFIX = "mcp__"
 
 # 各等级的简短中文说明
-_TIER_LABELS: dict[PermissionTier, str] = {
+TIER_LABELS: dict[PermissionTier, str] = {
     PermissionTier.READ_ONLY: "只读",
     PermissionTier.WRITE: "写入",
     PermissionTier.EXECUTE: "执行",
@@ -128,7 +141,7 @@ class PermissionChecker:
             allowed = self._high_risk_callback(tool_name, tier, arguments)
             if not allowed:
                 self._denied += 1
-                label = _TIER_LABELS.get(tier, "未知")
+                label = TIER_LABELS.get(tier, "未知")
                 return False, f"[权限拦截] {label}操作 '{tool_name}' 需要确认，已拒绝执行"
 
         return True, ""
@@ -151,7 +164,7 @@ class PermissionChecker:
         for tier in (PermissionTier.READ_ONLY, PermissionTier.WRITE,
                       PermissionTier.EXECUTE, PermissionTier.NETWORK):
             if s[tier] > 0:
-                label = _TIER_LABELS.get(tier, "未知")
+                label = TIER_LABELS.get(tier, "未知")
                 parts.append(f"{label}:{s[tier]}")
         result = f"[权限] 总调用 {total}（{', '.join(parts)}）"
         if self._denied > 0:

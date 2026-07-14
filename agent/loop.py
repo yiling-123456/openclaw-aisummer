@@ -28,12 +28,12 @@
 from __future__ import annotations
 import json
 import time
-from typing import Any
+from typing import Any, Callable
 
 from tools.base import ToolRegistry
 from agent.context import maybe_compact, truncate_observation
 from agent.planning import get_planner, reset_planner, TodoStatus
-from agent.permission import PermissionChecker, PermissionTier, TOOL_TIER_MAP
+from agent.permission import PermissionChecker, PermissionTier, TOOL_TIER_MAP, get_tier
 from tools.sanitize import sanitize_observation
 
 
@@ -193,6 +193,7 @@ class AgentLoop:
         system_prompt: str,
         max_turns: int = _MAX_TURNS,
         tracer: Any = None,
+        permission_callback: Callable[[str, PermissionTier, dict], bool] | None = None,
     ):
         self.backend = backend
         self.registry = registry
@@ -200,6 +201,34 @@ class AgentLoop:
         self.max_turns = max_turns
         self.tracer = tracer
         self.permission_checker = PermissionChecker()
+
+        # ── 设置权限询问回调 ──
+        # permission_callback 签名：(tool_name, tier, arguments) -> bool（True=允许）
+        if permission_callback is not None:
+            self.permission_checker.set_high_risk_callback(permission_callback)
+        else:
+            # 默认回调：通过 input() 在终端询问用户
+            self.permission_checker.set_high_risk_callback(
+                self._default_permission_prompt
+            )
+
+    @staticmethod
+    def _default_permission_prompt(tool_name: str, tier: PermissionTier, arguments: dict) -> bool:
+        """默认权限询问：使用 input() 直接交互，适用于单次执行和平文本模式。"""
+        from .permission import TIER_LABELS
+        import json as _json
+        label = TIER_LABELS.get(tier, "未知")
+        args_str = _json.dumps(arguments, ensure_ascii=False)
+        if len(args_str) > 120:
+            args_str = args_str[:117] + "..."
+        try:
+            resp = input(
+                f"\n⚠️ [{label}] Agent 要执行 {tool_name}({args_str})"
+                f"\n是否允许？[y/N] "
+            ).strip().lower()
+            return resp in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            return False
 
     # ── 单次执行模式 ────────────────────────────────────────────
 
@@ -412,6 +441,20 @@ class AgentLoop:
                         messages.append({
                             "role": "tool", "name": call["name"],
                             "tool_call_id": call.get("id"), "content": obs,
+                        })
+                        continue
+
+                # ── 权限分级检查 ──
+                if get_tier(call["name"]) != PermissionTier.READ_ONLY:
+                    allowed, reason = self.permission_checker.check(
+                        call["name"], call.get("arguments", {}),
+                    )
+                    if not allowed:
+                        obs = reason
+                        messages.append({
+                            "role": "tool", "name": call["name"],
+                            "tool_call_id": call.get("id"),
+                            "content": truncate_observation(str(obs)),
                         })
                         continue
 
@@ -725,6 +768,22 @@ class AgentLoop:
                         })
                         continue
 
+                # ── 权限分级检查（提前到 yield tool_call 之前）──
+                if get_tier(call["name"]) != PermissionTier.READ_ONLY:
+                    allowed, reason = self.permission_checker.check(
+                        call["name"], call.get("arguments", {}),
+                    )
+                    if not allowed:
+                        messages.append({
+                            "role": "tool", "name": call["name"],
+                            "tool_call_id": call.get("id"), "content": reason,
+                        })
+                        yield ("tool_result", {
+                            "name": call["name"], "result": reason,
+                            "success": False, "id": call.get("id"),
+                        })
+                        continue
+
                 yield ("tool_call", {
                     "name": call["name"],
                     "arguments": call.get("arguments", {}),
@@ -809,17 +868,7 @@ class AgentLoop:
     def _run_with_retry(
         self, tool: Any, call: dict[str, Any]
     ) -> tuple[str, bool]:
-        """执行工具，瞬时错误自动重试（指数退避）。
-        包含权限分级检查和注入防护检测。
-        """
-        # ── 权限分级检查 ──
-        tier = TOOL_TIER_MAP.get(tool.name, PermissionTier.READ_ONLY)
-        allowed, reason = self.permission_checker.check(
-            tool.name, call.get("arguments", {})
-        )
-        if not allowed:
-            return reason, False
-
+        """执行工具，瞬时错误自动重试（指数退避） + 注入防护检测。"""
         last_error = None
         for attempt in range(_MAX_RETRIES_TRANSIENT):
             try:
