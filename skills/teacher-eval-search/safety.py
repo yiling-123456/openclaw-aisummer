@@ -16,10 +16,13 @@ from typing import Any
 # 匹配 @数字+任意文本@ （非贪婪，不允许嵌套）
 _CITATION_RE = re.compile(r"@(\d+)\+(.+?)@")
 
+# 匹配 @[#数字] 格式（markdown 脚注风格，模型可能不遵循 SKILL.md 格式时的兜底）
+_BRACKET_CITATION_RE = re.compile(r"@\[#(\d+)\]")
+
 
 def _normalize_for_match(text: str) -> str:
     """去掉空格和常见中文标点，用于宽松的关键词匹配。"""
-    return re.sub(r'[\s,，。！？、；：""''【】《》（）!?\.\-　]', '', text)
+    return re.sub(r'[\s,，。！？、；：""''【】《》（）!?.　-]', '', text)
 
 
 def _keyword_matches(keyword: str, content: str) -> bool:
@@ -184,7 +187,7 @@ def _format_clean(segments: list[dict[str, Any]], engine: Any) -> str:
 
 
 def _format_show_all(segments: list[dict[str, Any]], engine: Any) -> str:
-    """``-a`` 模式：保留完整输出，对失败引用原地标注。"""
+    """``-a`` 模式：去除所有 @引用@ 标签，对失败引用原地标注详细信息。"""
     output_parts: list[str] = []
     total = 0
     verified = 0
@@ -200,8 +203,7 @@ def _format_show_all(segments: list[dict[str, Any]], engine: Any) -> str:
                 output_parts.append(f"⚠️ [序号{cit['id']}中未找到「{cit['keyword']}」]")
             else:
                 verified += 1
-                # 保留原始 @引用@ 标签
-                output_parts.append(cit["str"])
+                # 不输出 @引用@ 标签，静默通过
 
     if total > 0:
         failed = total - verified
@@ -226,10 +228,9 @@ def postprocess_citations(
     1. 解析所有 ``@N+keyword@`` 引用标签
     2. 按引用将文本切分为 (声明文本 → 引用列表) 段落
     3. 逐条校验：序号存在？关键词在原文中？
-    4. **默认模式**（``show_all=False``）：去除所有 ``@引用@`` 标签，
-       仅对校验失败的引用保留 ``⚠️`` 警告，末尾附加引用验证报告。
-    5. **舒展模式**（``show_all=True``，对应 CLI ``-a`` 参数）：保留完整
-       的 ``@引用@`` 标签，对失败引用原地标注 ``⚠️`` 警告。
+    4. 所有模式下均去除 ``@引用@`` 标签，仅对校验失败的引用保留 ``⚠️`` 警告。
+    5. ``-a`` 模式（``show_all=True``）在校验失败时提供更详细的信息
+       （序号不存在 / 关键词未找到），末尾附加引用验证报告。
 
     Parameters
     ----------
@@ -238,14 +239,18 @@ def postprocess_citations(
     engine:
         TeacherSearchEngine 实例（单例）。
     show_all:
-        是否以 ``-a`` 模式完整展示（含 ``@引用@`` 标签）。
+        是否以 ``-a`` 模式展示（失败引用提供更详细的诊断信息）。
 
     Returns
     -------
-    处理后的展示文本。
+    处理后的展示文本（不含 ``@引用@`` 标签）。
     """
     if not text:
         return text
+
+    # 预清理：去除 @[#数字] 格式的标记（markdown 脚注风格，无关键词无法校验，直接去除）
+    text = _BRACKET_CITATION_RE.sub('', text)
+
     if not _CITATION_RE.search(text):
         return text
 

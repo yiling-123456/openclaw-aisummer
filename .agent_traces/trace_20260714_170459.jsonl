@@ -1,4 +1,0 @@
-{"ts": 1784019900.864, "step": 1, "tool_calls": [{"id": "call_00_kipKgk4rMWDJa8xbZOK43157", "name": "teacher_search", "arguments": {"teachers": "[\"Mario Circeli\"]"}}], "note": "teacher_search", "prompt_tokens": 6970, "completion_tokens": 56}
-{"ts": 1784019903.481, "step": 2, "tool_calls": [{"id": "call_00_kWHj2C0lTE9GxUZDgZyI7556", "name": "teacher_search", "arguments": {"teachers": "[\"Circeli\"]"}}], "note": "teacher_search", "prompt_tokens": 7104, "completion_tokens": 78}
-{"ts": 1784019904.969, "step": 3, "tool_calls": [{"id": "call_00_vGZomagdcqvev9AJYzqN5744", "name": "teacher_search", "arguments": {"teachers": "[\"Mario\"]"}}], "note": "teacher_search", "prompt_tokens": 7259, "completion_tokens": 55}
-{"ts": 1784019920.088, "step": 4, "tool_calls": [], "note": "最终答复", "prompt_tokens": 16981, "completion_tokens": 1117}
