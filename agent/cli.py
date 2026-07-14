@@ -63,9 +63,12 @@ def _postprocess_result(result: str, show_all: bool = False) -> str:
         engine = get_engine()
         return postprocess_citations(result, engine, show_all=show_all)
     except Exception:
-        # 搜索引擎完全不可用时：所有模式均去掉 @引用@ 标签
+        # 搜索引擎完全不可用时：去掉 @引用@ 标签，并追加引用统计（有引用标签时才加）
         import re as _re
+        citations = _re.findall(r"@(\d+)\+(.+?)@", result)
         result = _re.sub(r"@(\d+)\+(.+?)@", "", result)
+        if citations:
+            result += f"\n\n--- 引用验证报告：共 {len(citations)} 条（引擎未加载，无法校验真实性） ---"
         return result
 
 

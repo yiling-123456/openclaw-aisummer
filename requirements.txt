@@ -1,15 +1,22 @@
 # --- 核心（Day1 起就需要）---
 httpx>=0.27          # 调 DeepSeek API（backend/client.py）/ web_fetch
 pydantic>=2.0        # 工具 schema 校验
+tiktoken>=0.7        # token 估算（context.py 上下文压缩时使用，失败则回退字符数粗估）
+
+# --- Day10+ OCR 图片识别（read 工具自动检测图片文件并 OCR）---
+Pillow>=10.0         # 图片处理（打开/缩放图片）
+pytesseract>=0.3     # Tesseract OCR Python 封装
+# Tesseract 引擎（系统级）：apt install tesseract-ocr tesseract-ocr-chi-sim
 
 # --- Day7 web_fetch 工具 ---
 markdownify>=0.13    # web_fetch: HTML -> markdown
 rich>=13             # 终端 Markdown 渲染，让输出更美观
 prompt_toolkit>=3.0   # 跨平台终端输入（多行编辑/粘贴/Ctrl-C 支持）
+PyYAML>=6.0
 # ripgrep(rg) 请用系统包管理器安装：brew install ripgrep / apt install ripgrep（Day6 grep 工具）
 
 # --- Day8 MCP（可选，最小客户端可不依赖官方 SDK）---
-# mcp>=1.0           # 官方 SDK，做对照时再装
+mcp>=1.2.0           # 官方 SDK，做对照时再装
 
 # 说明：本课程大脑走 DeepSeek API，不本地部署模型、不做 LoRA，故无需 vllm/peft/torch 等重依赖。
 # （Day2 的 nanoGPT 实验请用单独的 conda 环境安装 torch，避免污染 agent 环境。）

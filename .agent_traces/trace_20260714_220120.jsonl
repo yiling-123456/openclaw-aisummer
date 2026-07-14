@@ -1,0 +1,2 @@
+{"ts": 1784037681.386, "step": 1, "tool_calls": [{"id": "call_00_AhTguhrzNXj3HbwvtuYj8641", "name": "teacher_search", "arguments": {"teachers": "[\"董育平\"]"}}], "note": "teacher_search", "prompt_tokens": 6803, "completion_tokens": 56, "cost": 0.000968}
+{"ts": 1784037697.289, "step": 2, "tool_calls": [], "note": "最终答复", "prompt_tokens": 14421, "completion_tokens": 1533, "cost": 0.002448}

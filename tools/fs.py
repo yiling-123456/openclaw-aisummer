@@ -73,6 +73,13 @@ def _read(path: str, max_bytes: int = 100_000) -> str:
     if _is_sensitive(safe_path):
         return f"[安全拦截] 禁止读取敏感文件：{os.path.basename(path)}"
 
+    # ── 图片文件 → 自动 OCR（DeepSeek 不支持多模态，所以用 OCR 提取文字）──
+    from .ocr import is_image_file, ocr_image
+    if is_image_file(safe_path):
+        if not os.path.isfile(safe_path):
+            raise FileNotFoundError(f"图片文件不存在：{path}")
+        return ocr_image(safe_path)
+
     with open(safe_path, "r", encoding="utf-8") as f:
         text = f.read(max_bytes + 1)
     truncated = len(text) > max_bytes
@@ -98,7 +105,7 @@ def _write(path: str, content: str) -> str:
 
 read_tool = Tool(
     name="read",
-    description="读取指定路径的文本文件内容。",
+    description="读取指定路径的文件内容。支持文本文件和图片文件（图片自动 OCR 识别文字后返回）。",
     parameters={"type": "object",
                 "properties": {"path": {"type": "string", "description": "文件路径"}},
                 "required": ["path"]},

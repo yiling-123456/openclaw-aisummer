@@ -175,13 +175,12 @@ def _format_clean(segments: list[dict[str, Any]], engine: Any) -> str:
                 verified += 1
                 # 不输出 @引用@ 标签，静默通过
 
-    if total > 0:
-        failed = total - verified
-        output_parts.append(
-            f"\n\n--- 引用验证报告：共 {total} 条，通过 {verified} 条"
-            + (f"，失败 {failed} 条" if failed else "，全部通过 ✅")
-            + " ---"
-        )
+    failed = total - verified
+    output_parts.append(
+        f"\n\n--- 引用验证报告：共 {total} 条，通过 {verified} 条"
+        + (f"，失败 {failed} 条" if failed else "，全部通过 ✅")
+        + " ---"
+    )
 
     return "".join(output_parts)
 
@@ -205,13 +204,12 @@ def _format_show_all(segments: list[dict[str, Any]], engine: Any) -> str:
                 verified += 1
                 # 不输出 @引用@ 标签，静默通过
 
-    if total > 0:
-        failed = total - verified
-        output_parts.append(
-            f"\n\n--- 引用验证报告：共 {total} 条，通过 {verified} 条"
-            + (f"，失败 {failed} 条" if failed else "，全部通过 ✅")
-            + " ---"
-        )
+    failed = total - verified
+    output_parts.append(
+        f"\n\n--- 引用验证报告：共 {total} 条，通过 {verified} 条"
+        + (f"，失败 {failed} 条" if failed else "，全部通过 ✅")
+        + " ---"
+    )
 
     return "".join(output_parts)
 
@@ -257,11 +255,12 @@ def postprocess_citations(
     # 没有已索引的评论数据 → 无法校验引用真实性。
     # 默认模式下直接去掉 @引用@ 标签（保留干净文本）；
     # -a 模式下保留原始标签供调试。
+    # 两种模式下都追加引用总数说明。
     if not engine or not engine.reviews:
-        if show_all:
-            return text
-        else:
-            return _CITATION_RE.sub('', text)
+        citations = _CITATION_RE.findall(text)
+        total = len(citations)
+        stripped = text if show_all else _CITATION_RE.sub('', text)
+        return stripped + f"\n\n--- 引用验证报告：共 {total} 条（引擎未加载，无法校验真实性） ---"
 
     segments = _parse_segments(text)
 

@@ -13,14 +13,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
     && rm -rf /var/lib/apt/lists/*
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 
+RUN npm config set registry "$NPM_REGISTRY" \
+    && npm install -g @modelcontextprotocol/server-filesystem \
+    && npm cache clean --force \
+    && command -v mcp-server-filesystem
 # 工作目录
 WORKDIR /app
 
 # 先复制依赖文件，利用 Docker 缓存层
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=60 -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 # 复制项目源码
 COPY . .
