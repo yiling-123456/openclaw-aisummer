@@ -75,6 +75,11 @@ def build_default_registry() -> ToolRegistry:
     reg.register(web_fetch_tool)
     reg.register(task_list_tool)
     #
+    # D9+: 规划层 todo 工具
+    from .todo_tools import todo_write_tool, todo_update_tool
+    for t in (todo_write_tool, todo_update_tool):
+        reg.register(t)
+    #
     # Day9: 教师评价搜索工具（teacher-eval-search skill）
     from .teacher_search import teacher_search_tool
     reg.register(teacher_search_tool)

@@ -17,6 +17,29 @@ from typing import Any
 _CITATION_RE = re.compile(r"@(\d+)\+(.+?)@")
 
 
+def _normalize_for_match(text: str) -> str:
+    """去掉空格和常见中文标点，用于宽松的关键词匹配。"""
+    return re.sub(r'[\s,，。！？、；：""''【】《》（）!?\.\-　]', '', text)
+
+
+def _keyword_matches(keyword: str, content: str) -> bool:
+    """检查关键词是否（近似）出现在原文内容中。
+
+    策略：
+    1. 精确子串匹配（最快路径，最严格）
+    2. 去空格+标点后的子串匹配（处理标点/空格差异）
+    """
+    # 1. 精确匹配
+    if keyword in content:
+        return True
+    # 2. 去标点空格后匹配
+    nk = _normalize_for_match(keyword)
+    nc = _normalize_for_match(content)
+    if len(nk) >= 2 and nk in nc:
+        return True
+    return False
+
+
 class CitationError(Exception):
     """引用校验失败时抛出的异常。"""
     pass
@@ -65,7 +88,7 @@ def verify_citations(
             })
             continue
 
-        if keyword not in review["content"]:
+        if not _keyword_matches(keyword, review["content"]):
             violations.append({
                 "citation": citation_text,
                 "id": review_id,
@@ -142,16 +165,12 @@ def _format_clean(segments: list[dict[str, Any]], engine: Any) -> str:
             total += 1
             review = engine.get_review_by_id(cit["id"])
             if review is None:
-                output_parts.append(
-                    f"⚠️ [引用验证失败：序号{cit['id']}不存在于原始数据中]"
-                )
-            elif cit["keyword"] not in review["content"]:
-                output_parts.append(
-                    f"⚠️ [引用验证失败：序号{cit['id']}中未找到关键词「{cit['keyword']}」]"
-                )
+                output_parts.append("⚠️")
+            elif not _keyword_matches(cit["keyword"], review["content"]):
+                output_parts.append("⚠️")
             else:
                 verified += 1
-                # 默认模式不输出 @引用@ 标签，静默通过
+                # 不输出 @引用@ 标签，静默通过
 
     if total > 0:
         failed = total - verified
@@ -176,15 +195,12 @@ def _format_show_all(segments: list[dict[str, Any]], engine: Any) -> str:
             total += 1
             review = engine.get_review_by_id(cit["id"])
             if review is None:
-                output_parts.append(
-                    f"⚠️ {cit['str']}[引用验证失败：序号{cit['id']}不存在于原始数据中]"
-                )
-            elif cit["keyword"] not in review["content"]:
-                output_parts.append(
-                    f"⚠️ {cit['str']}[引用验证失败：序号{cit['id']}中未找到关键词「{cit['keyword']}」]"
-                )
+                output_parts.append(f"⚠️ [序号{cit['id']}不存在]")
+            elif not _keyword_matches(cit["keyword"], review["content"]):
+                output_parts.append(f"⚠️ [序号{cit['id']}中未找到「{cit['keyword']}」]")
             else:
                 verified += 1
+                # 保留原始 @引用@ 标签
                 output_parts.append(cit["str"])
 
     if total > 0:
@@ -231,17 +247,30 @@ def postprocess_citations(
     if not text:
         return text
     if not _CITATION_RE.search(text):
-        return text  # 没有引用标签，无需处理
+        # 虽有引用标签但无法校验的场景已在前面 return 了。
+        # 走到这里意味着完全没有任何引用标签——如果是教师评价任务，
+        # 这说明模型输出缺乏必要的引用，原样返回。
+        return text
     # 没有已索引的评论数据 → 无法校验，原样返回（可能是非教师评价任务）
     if not engine or not engine.reviews:
         return text
 
     segments = _parse_segments(text)
 
+    # ── 在原始文本上检测缺少引用的评价性语句（而非在格式化之后）──
+    suspicious = check_uncited_claims(text, engine)
+
     if show_all:
-        return _format_show_all(segments, engine)
+        result = _format_show_all(segments, engine)
     else:
-        return _format_clean(segments, engine)
+        result = _format_clean(segments, engine)
+
+    if suspicious:
+        result += "\n\n**⚠️ 以下语句可能缺少引用标注：**\n" + "\n".join(
+            f"> {s}" for s in suspicious[:5]
+        )
+
+    return result
 
 
 def check_uncited_claims(
@@ -255,21 +284,23 @@ def check_uncited_claims(
 
     这只是一个辅助检查——最终的安全判定应结合人工审查。
     """
-    # 把已引用部分移除，检查剩余文本
-    clean = _CITATION_RE.sub("", text)
-
     eval_keywords = ["老师", "课程", "给分", "作业", "考试", "上课", "讲课", "教学",
                      "课堂", "点名", "给分", "水课", "难度", "平时", "期末"]
 
     suspicious: list[str] = []
-    for line in clean.splitlines():
+    for line in text.splitlines():
         line = line.strip()
         if not line or len(line) < 10:
             continue
         # 跳过分隔线和标题
         if line.startswith("#") or line.startswith("==") or line.startswith("--"):
             continue
-        if any(kw in line for kw in eval_keywords):
-            suspicious.append(line)
+        # 如果行中已经含有 @N+keyword@ 引用标签，说明有引用，跳过
+        if _CITATION_RE.search(line):
+            continue
+        # 去掉残留的引用标签后，检查是否含评价性关键词
+        clean = _CITATION_RE.sub("", line)
+        if any(kw in clean for kw in eval_keywords):
+            suspicious.append(clean.strip())
 
     return suspicious

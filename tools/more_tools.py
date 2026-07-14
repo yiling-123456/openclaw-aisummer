@@ -178,10 +178,11 @@ def _web_fetch(url: str, max_tokens: int = 2000) -> str:
 
 
 # --- task_list（TodoWrite）：自维护待办，提升长任务成功率 ---
+#
+# 已集成 PlanningLayer（agent/planning.py），内部委托给 PlanningManager
+# 保持外部接口不变，同时与 todo_write / todo_update 共享同一状态。
 
-# 模块级待办存储（会话内有效）
-_todos: list[dict] = []
-_todo_counter: int = 0
+from agent.planning import get_planner, TodoStatus
 
 
 def _task_list(action: str = "list", items: list | None = None) -> str:
@@ -195,12 +196,11 @@ def _task_list(action: str = "list", items: list | None = None) -> str:
       - "list": 列出所有待办（按状态分组）
       - "clear": 清空所有已完成的待办
     """
-    global _todos, _todo_counter
+    planner = get_planner()
 
     if items is None:
         items = []
 
-    # 防御：如果 action 不是有效值，给出清晰的用法提示
     valid_actions = {"add", "update", "list", "clear"}
     if action not in valid_actions:
         return (
@@ -213,15 +213,11 @@ def _task_list(action: str = "list", items: list | None = None) -> str:
     if action == "add":
         added = []
         for item in items:
-            _todo_counter += 1
-            entry = {
-                "id": _todo_counter,
-                "title": str(item.get("title", "")),
-                "note": str(item.get("note", "")),
-                "status": "pending",
-            }
-            _todos.append(entry)
-            added.append(f"  [#{entry['id']}] {entry['title']}")
+            todo = planner.add(
+                str(item.get("title", "")),
+                str(item.get("note", "")),
+            )
+            added.append(f"  [#{todo.id}] {todo.title}")
         return f"[task_list] 已添加 {len(added)} 项待办：\n" + "\n".join(added)
 
     elif action == "update":
@@ -229,43 +225,15 @@ def _task_list(action: str = "list", items: list | None = None) -> str:
         for item in items:
             tid = item.get("id")
             new_status = item.get("status", "pending")
-            for t in _todos:
-                if t["id"] == tid:
-                    t["status"] = new_status
-                    updated += 1
-                    break
+            if planner.update(tid, new_status):
+                updated += 1
         return f"[task_list] 已更新 {updated} 项待办状态。"
 
     elif action == "list":
-        if not _todos:
-            return "[task_list] 当前没有待办项。"
-        # 按状态分组
-        groups: dict[str, list] = {"in_progress": [], "pending": [], "completed": [], "cancelled": []}
-        for t in _todos:
-            groups.setdefault(t["status"], []).append(t)
-
-        lines = ["=== 当前待办清单 ==="]
-        status_labels = {
-            "in_progress": "🔄 进行中",
-            "pending": "📋 待处理",
-            "completed": "✅ 已完成",
-            "cancelled": "❌ 已取消",
-        }
-        for status, label in status_labels.items():
-            if groups.get(status):
-                lines.append(f"\n{label}：")
-                for t in groups[status]:
-                    note_suffix = f" — {t['note']}" if t["note"] else ""
-                    lines.append(f"  [#{t['id']}] {t['title']}{note_suffix}")
-
-        counts = ", ".join(f"{label}: {len(groups.get(s, []))}" for s, label in status_labels.items())
-        lines.append(f"\n--- 统计：{counts} ---")
-        return "\n".join(lines)
+        return planner.format_for_prompt() or "[task_list] 当前没有待办项。"
 
     elif action == "clear":
-        before = len(_todos)
-        _todos[:] = [t for t in _todos if t["status"] not in ("completed", "cancelled")]
-        removed = before - len(_todos)
+        removed = planner.clear()
         return f"[task_list] 已清理 {removed} 条已完成/已取消的待办。"
 
     else:
