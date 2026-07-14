@@ -1,0 +1,3 @@
+{"ts": 1784031244.546, "step": 1, "tool_calls": [{"id": "call_00_8Rz3MyeeojJCRJejze0T7394", "name": "teacher_search", "arguments": {"teachers": "[\"李继军\"]"}}], "note": "teacher_search", "prompt_tokens": 5903, "completion_tokens": 56, "cost": 0.000842}
+{"ts": 1784031246.548, "step": 2, "tool_calls": [{"id": "call_00_FmxYdhKNngyzohOjB5Uh7917", "name": "teacher_search", "arguments": {"teachers": "[\"李继\"]"}}], "note": "teacher_search", "prompt_tokens": 6036, "completion_tokens": 62, "cost": 0.000862}
+{"ts": 1784031251.738, "step": 3, "tool_calls": [], "note": "最终答复", "prompt_tokens": 6262, "completion_tokens": 81, "cost": 0.000899}

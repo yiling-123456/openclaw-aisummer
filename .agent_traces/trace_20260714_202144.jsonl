@@ -1,0 +1,2 @@
+{"ts": 1784031706.942, "step": 1, "tool_calls": [{"id": "call_00_XgzEwAkDlHHlnbOE2xpC2035", "name": "teacher_search", "arguments": {"teachers": "[\"李际军\"]"}}], "note": "teacher_search", "prompt_tokens": 5897, "completion_tokens": 56, "cost": 0.000841}
+{"ts": 1784031718.485, "step": 2, "tool_calls": [], "note": "最终答复", "prompt_tokens": 19396, "completion_tokens": 809, "cost": 0.002942}

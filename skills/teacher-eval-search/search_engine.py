@@ -155,6 +155,88 @@ class TeacherSearchEngine:
         return self.reviews.get(review_id)
 
     # ------------------------------------------------------------------
+    # 模糊匹配（输入名称查无此人时，推荐相近姓名）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _levenshtein_ratio(s1: str, s2: str) -> float:
+        """计算两个字符串的归一化编辑距离相似度 (0~1, 1 表示完全相同)。
+
+        使用标准 Levenshtein 距离，除以较长字符串的长度做归一化。
+        """
+        if not s1 and not s2:
+            return 1.0
+        if not s1 or not s2:
+            return 0.0
+
+        if len(s1) > len(s2):
+            s1, s2 = s2, s1
+        if len(s2) - len(s1) > len(s1):
+            return 0.0
+
+        prev_row = list(range(len(s2) + 1))
+        for i, c1 in enumerate(s1):
+            curr_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                cost = 0 if c1 == c2 else 1
+                curr_row.append(min(
+                    curr_row[j] + 1,
+                    prev_row[j + 1] + 1,
+                    prev_row[j] + cost,
+                ))
+            prev_row = curr_row
+
+        distance = prev_row[-1]
+        max_len = max(len(s1), len(s2))
+        return 1.0 - distance / max_len
+
+    def find_similar_teachers(
+        self,
+        query_name: str,
+        top_k: int = 5,
+        threshold: float = 0.4,
+    ) -> list[dict[str, Any]]:
+        """查找与查询姓名相近的教师名（编辑距离相似度）。
+
+        当 query_name 在全量索引中无匹配时，遍历所有已知教师姓名，
+        计算 Levenshtein 相似度，返回最相近的结果供用户选择。
+
+        Args:
+            query_name: 查询的教师姓名。
+            top_k: 最多返回多少个相似结果。
+            threshold: 相似度阈值 (0~1)，低于此值不返回。
+
+        Returns:
+            [{"name": str, "departments": [str], "similarity": float}, ...]
+            按相似度降序排列。
+        """
+        if not self._indexed:
+            self._build_index()
+
+        candidates: list[tuple[str, float]] = []
+        for teacher_name in self.teacher_index:
+            sim = self._levenshtein_ratio(query_name, teacher_name)
+            if sim >= threshold:
+                candidates.append((teacher_name, sim))
+
+        candidates.sort(key=lambda x: -x[1])
+        candidates = candidates[:top_k]
+
+        results: list[dict[str, Any]] = []
+        for name, sim in candidates:
+            gids = self.teacher_index[name]
+            depts: set[str] = set()
+            for gid in gids:
+                depts.add(self.reviews[gid]["department"])
+            results.append({
+                "name": name,
+                "departments": sorted(depts),
+                "similarity": round(sim, 3),
+            })
+
+        return results
+
+    # ------------------------------------------------------------------
     # 内部：索引构建
     # ------------------------------------------------------------------
 

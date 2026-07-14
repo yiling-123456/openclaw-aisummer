@@ -75,10 +75,22 @@ def _teacher_search(teachers: str, department: str = "", max_reviews: int = 200)
             )
 
     if not result["teachers"]:
-        lines.append("\n未找到匹配的教师。请尝试：")
-        lines.append("- 检查教师姓名拼写是否正确")
-        lines.append("- 尝试使用教师姓名的部分文字（如只输入姓氏）")
-        lines.append("- 使用 department 参数指定院系进行模糊搜索")
+        lines.append("\n未找到匹配的教师。")
+
+        # 尝试模糊匹配，推荐姓名相近的教师
+        for query_name in teacher_list:
+            suggestions = engine.find_similar_teachers(query_name, top_k=5, threshold=0.4)
+            if suggestions:
+                lines.append(f"\n您输入的「{query_name}」是否是指以下老师？")
+                for s in suggestions:
+                    dept_str = "、".join(s["departments"])
+                    lines.append(f"  • {s['name']}（{dept_str}）")
+                lines.append("（建议复制上方准确的教师姓名重新查询）")
+            else:
+                lines.append(f"\n未找到与「{query_name}」相近的教师名。请尝试：")
+                lines.append("- 检查教师姓名拼写是否正确")
+                lines.append("- 尝试使用教师姓名的部分文字（如只输入姓氏）")
+                lines.append("- 使用 department 参数指定院系进行模糊搜索")
 
     return "\n".join(lines)
 
