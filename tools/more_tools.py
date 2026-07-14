@@ -84,6 +84,15 @@ def _glob(pattern: str, max_items: int = 100) -> str:
     return "\n".join(paths)
 
 
+# ── 出站白名单（注入防护：阻断敏感数据外传）─────────────────────
+#
+# web_fetch 只允许访问下列域名。空集合 = 允许所有域名（仅由 SSRF 防护兜底）。
+# 为获得完整注入防护，请把项目所需的域名加入此集合。
+_ALLOWED_OUTBOUND_HOSTS: set[str] = set()
+# 示例配置：
+# _ALLOWED_OUTBOUND_HOSTS = {"api.deepseek.com", "example.com"}
+
+
 # ── SSRF 防护：URL 安全校验 ──────────────────────────────────────
 
 # 禁止访问的 IP 范围
@@ -153,11 +162,22 @@ def _web_fetch(url: str, max_tokens: int = 2000) -> str:
     import httpx
     from markdownify import markdownify as md
     from agent.context import truncate_observation
+    from tools.fs import wrap_external
 
     # ── SSRF 安全校验 ──
     rejection = _validate_url(url)
     if rejection is not None:
         return f"[安全拦截] {rejection}"
+
+    # ── 出站白名单校验（注入防护：防数据外传） ──
+    if _ALLOWED_OUTBOUND_HOSTS:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if hostname and hostname not in _ALLOWED_OUTBOUND_HOSTS:
+            return (
+                f"[安全拦截] 出站域名 '{hostname}' 不在白名单中。"
+                f"仅允许：{', '.join(sorted(_ALLOWED_OUTBOUND_HOSTS))}"
+            )
 
     resp = httpx.get(url, timeout=20, follow_redirects=False)
     # 处理手动重定向——每步都重新校验目标 URL
@@ -171,10 +191,21 @@ def _web_fetch(url: str, max_tokens: int = 2000) -> str:
         rejection = _validate_url(next_url)
         if rejection is not None:
             return f"[安全拦截] 重定向目标 {rejection}"
+        # 重定向目标也受出站白名单约束
+        if _ALLOWED_OUTBOUND_HOSTS:
+            parsed = urlparse(next_url)
+            hostname = parsed.hostname
+            if hostname and hostname not in _ALLOWED_OUTBOUND_HOSTS:
+                return (
+                    f"[安全拦截] 重定向目标 '{hostname}' 不在白名单中。"
+                    f"仅允许：{', '.join(sorted(_ALLOWED_OUTBOUND_HOSTS))}"
+                )
         resp = httpx.get(next_url, timeout=20)
     resp.raise_for_status()
     text = md(resp.text)                     # HTML -> markdown
-    return truncate_observation(text, max_chars=max_tokens * 4)
+    text = truncate_observation(text, max_chars=max_tokens * 4)
+    # 注入隔离：外部内容用 <external> 标签包裹
+    return wrap_external(text, url)
 
 
 # --- task_list（TodoWrite）：自维护待办，提升长任务成功率 ---
