@@ -268,6 +268,11 @@ def _interactive_plain(backend, registry, system_prompt, tracer=None) -> int:
                     print(f" -> {icon}")
                 elif event_type == "done":
                     content = data.get("content", "")
+                    # 清理 surrogate 字符，防止 print 崩溃
+                    try:
+                        content = content.encode('utf-8', errors='replace').decode('utf-8')
+                    except Exception:
+                        pass
                     messages = data.get("messages")
                     print()
                     if content:
@@ -389,6 +394,12 @@ def main(argv: list[str] | None = None) -> int:
             pass  # 无教师数据目录或模块不可用 → 原样输出
 
         # 使用 rich 在终端中渲染 Markdown，让输出更美观
+        # 先清理可能存在的 surrogate 字符（来自原始数据），防止编码崩溃
+        try:
+            result = result.encode('utf-8', errors='replace').decode('utf-8')
+        except Exception:
+            pass
+
         try:
             from rich.console import Console
             from rich.markdown import Markdown

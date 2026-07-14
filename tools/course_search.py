@@ -56,6 +56,61 @@ def _parse_count(raw: str) -> int:
         return 0
 
 
+# ---- 课程别名表：常见英文缩写 → 中文课程名 ----
+# 当直接模糊搜索无结果时，会尝试用别名映射后的名称重新搜索。
+_COURSE_ALIASES: dict[str, str] = {
+    # 计算机/CS
+    "ads": "算法设计与分析",
+    "ds": "数据结构",
+    "os": "操作系统",
+    "cn": "计算机网络",
+    "计组": "计算机组成",
+    "计网": "计算机网络",
+    "计控": "计算机控制",
+    # 数学
+    "实变": "实变函数",
+    "复变": "复变函数",
+    "常微分": "常微分方程",
+    "偏微分": "偏微分方程",
+    "概统": "概率论与数理统计",
+    "高数": "高等数学",
+    "线代": "线性代数",
+    # 物理
+    "大物": "大学物理",
+    "普物": "普通物理",
+    "四大力学": "理论力学",
+    # 其他常见
+    "大英": "大学英语",
+    "思修": "思想道德修养与法律基础",
+    "马原": "马克思主义基本原理",
+    "毛概": "毛泽东思想",
+    "军理": "军事理论",
+    "大语": "大学语文",
+}
+
+
+def _resolve_alias(name: str) -> list[str]:
+    """将课程名/缩写解析为一组候选搜索词。
+
+    返回 [原始名称, 可能的别名展开, ...]，供后续逐一遍历搜索。
+    """
+    candidates = [name]
+    lower = name.lower()
+    if lower in _COURSE_ALIASES:
+        candidates.append(_COURSE_ALIASES[lower])
+    # 对包含连字符或斜杠的名称也尝试拆分
+    for sep in ("/", "、", "／"):
+        if sep in name:
+            for part in name.split(sep):
+                part = part.strip()
+                if part:
+                    candidates.append(part)
+                    pl = part.lower()
+                    if pl in _COURSE_ALIASES:
+                        candidates.append(_COURSE_ALIASES[pl])
+    return candidates
+
+
 def _course_search(course_name: str, max_results: int = 50, min_reviews: int = 0) -> str:
     """搜索指定课程的所有授课教师。
 
@@ -80,24 +135,36 @@ def _course_search(course_name: str, max_results: int = 50, min_reviews: int = 0
     except json.JSONDecodeError as e:
         return f"[course_search] 错误：gpa.json 格式无效 - {e}"
 
-    query = course_name.lower()
+    # 如果有别名映射，自动展开
+    resolved_name = _resolve_alias(course_name)[0]  # 第一项是原始名
+    query = resolved_name.lower()
     matches: list[dict] = []  # [{teacher, course, count}]
 
-    for teacher, courses in data.items():
-        for entry in courses:
-            # entry: [course_name, gpa, student_count, std_dev]
-            if not isinstance(entry, (list, tuple)) or len(entry) < 3:
-                continue
-            course_title = str(entry[0])
-            if query in course_title.lower():
-                student_cnt = _parse_count(str(entry[2]))
-
-                if student_cnt >= min_reviews:
-                    matches.append({
-                        "teacher": teacher,
-                        "course": course_title,
-                        "count": student_cnt,
-                    })
+    # 如果原始搜索无结果，尝试别名解析后的其他候选词
+    search_candidates = _resolve_alias(course_name)
+    searched_queries = []
+    for candidate in search_candidates:
+        cq = candidate.lower()
+        if cq in searched_queries:
+            continue
+        searched_queries.append(cq)
+        for teacher, courses in data.items():
+            for entry in courses:
+                # entry: [course_name, gpa, student_count, std_dev]
+                if not isinstance(entry, (list, tuple)) or len(entry) < 3:
+                    continue
+                course_title = str(entry[0])
+                if cq in course_title.lower():
+                    student_cnt = _parse_count(str(entry[2]))
+                    if student_cnt >= min_reviews:
+                        matches.append({
+                            "teacher": teacher,
+                            "course": course_title,
+                            "count": student_cnt,
+                        })
+        if matches:
+            query = cq
+            break
 
     if not matches:
         return (
@@ -126,6 +193,8 @@ def _course_search(course_name: str, max_results: int = 50, min_reviews: int = 0
     lines: list[str] = []
     lines.append("=== 课程授课教师检索结果 ===")
     lines.append(f"查询课程：{course_name}")
+    if query != course_name.lower():
+        lines.append(f"实际匹配词：{query}")
     lines.append(f"匹配教师数：{len(teacher_groups)}")
     lines.append(f"匹配教学班数：{len(matches)}")
     if min_reviews > 0:

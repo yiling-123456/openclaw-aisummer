@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(git -C /home/yiling/openclaw-aisummer tag --sort=-creatordate)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(python *)"
     ]
   }
 }
