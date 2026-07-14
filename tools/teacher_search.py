@@ -54,10 +54,23 @@ def _teacher_search(teachers: str, department: str = "", max_reviews: int = 200)
         dept_str = "、".join(entry["departments"])
         lines.append(f"\n--- {name}（{dept_str}）---")
         lines.append(f"共有 {entry['review_count']} 条评价，以下为检索到的内容：\n")
+
+        # 投票汇总（如果有 vote_stats 字段）
+        if "vote_stats" in entry:
+            vs = entry["vote_stats"]
+            lines.append(
+                f"📊 投票汇总：总点赞 {vs['total_likes']} / 总点踩 {vs['total_dislikes']}"
+                f"，平均净赞 {vs['avg_net_likes']}"
+                f"，好评率 {vs['pos_ratio']:.1%}\n"
+            )
+
         for r in entry["reviews"]:
+            net = r.get("net_likes", r["likes"] - r["dislikes"])
+            vote_tag = "👍" if net > 0 else ("👎" if net < 0 else "➖")
             # 每条评价以全局序号开头，方便模型在输出中用 @序号+关键词@ 引用
             lines.append(
-                f"[#{r['id']}] {r['date']}  点赞{r['likes']} / 点踩{r['dislikes']}\n"
+                f"[#{r['id']}] {r['date']}  "
+                f"{vote_tag} 赞{r['likes']} / 踩{r['dislikes']}（净{net:+d}）\n"
                 f"  {r['content']}\n"
             )
 
@@ -76,7 +89,12 @@ teacher_search_tool = Tool(
     name="teacher_search",
     description=(
         "搜索本地教师评价数据库，返回指定教师的学生评价原文。"
-        "每条评价带有全局唯一序号 [#N]，后续在总结中必须用 @N+关键词@ 格式引用原始评价。"
+        "每条评价带有全局唯一序号 [#N]、时间（date）、顶踩数（likes/dislikes/net_likes），"
+        "后续在总结中必须用 @N+关键词@ 格式引用原始评价。"
+        "⚠️ 每次引用时，必须在 @引用@ 标签附近附带该条评价的时间、赞数和踩数"
+        "（或净赞数），例如 @125+讲课清楚@（2026-06，赞23/踩2，净+21）。"
+        "这是强制规则，不可省略。"
+        "⚠️ 评价的时间越新、净赞数越高，可信度和代表性越强，归纳时应优先参考。"
         "支持同时查询多位教师（用于对比），支持按院系过滤。"
     ),
     parameters={
