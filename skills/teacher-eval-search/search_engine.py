@@ -185,6 +185,8 @@ class TeacherSearchEngine:
                             "date": row[3].strip(),
                             "likes": int(row[5]) if row[5].isdigit() else 0,
                             "dislikes": int(row[6]) if row[6].isdigit() else 0,
+                            "net_likes": (int(row[5]) if row[5].isdigit() else 0)
+                                        - (int(row[6]) if row[6].isdigit() else 0),
                             "content": row[7].strip(),
                         }
                         self.reviews[global_id] = review

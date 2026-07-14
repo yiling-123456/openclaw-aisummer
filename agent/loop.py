@@ -82,6 +82,44 @@ def _is_transient(error: Exception) -> bool:
                                     "503", "502", "429"))
 
 
+def _has_substantive_tool_results(messages: list[dict[str, Any]]) -> bool:
+    """检查消息历史中是否有工具返回了实质性数据（而非空/否定结果）。
+
+    用于判断是否应该强制模型写详细总结：
+    - 如果工具只返回了"没有"、"未找到"等空结果 → 不应强制详细输出
+    - 如果工具返回了实际数据（如文件内容、搜索结果） → 可以要求详细输出
+    """
+    empty_patterns = [
+        "当前没有已保存的记忆",
+        "未找到",
+        "没有",
+        "不存在",
+        "no results",
+        "not found",
+    ]
+    for msg in messages:
+        if msg.get("role") != "tool":
+            continue
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+        # 检查是否所有工具结果都是"空/否定"类型
+        is_empty = any(p in content for p in empty_patterns)
+        if not is_empty:
+            # 至少有一个工具返回了非空数据
+            return True
+    return False
+
+
+def _count_tool_calls_in_history(messages: list[dict[str, Any]]) -> int:
+    """统计消息历史中实际执行过的工具调用次数。"""
+    count = 0
+    for msg in messages:
+        if msg.get("role") == "tool":
+            count += 1
+    return count
+
+
 def _find_last_detailed_assistant(messages: list[dict[str, Any]]) -> str | None:
     """从消息历史中找最后一条有实质内容的 assistant 消息。
 
@@ -294,7 +332,7 @@ class AgentLoop:
                     f"当前规划状态：\n{planner_text}\n\n"
                     f"建议：\n"
                     f"1. 查看当前规划，确认下一步应该做什么\n"
-                    f"2. 如果已获取到足够的 teacher_search 数据，请直接用 todo_update 标记完成并输出总结\n"
+                    f"2. 如果已获取到足够的数据，请直接用 todo_update 标记完成并输出总结\n"
                     f"3. 如果某子任务卡住，换个方法或标记 `blocked`\n"
                     f"4. 如果已完成，请直接给出最终总结"
                 )
@@ -354,18 +392,21 @@ class AgentLoop:
                         detailed = _find_last_detailed_assistant(messages)
                         if detailed:
                             return detailed
-                        messages.append({
-                            "role": "user",
-                            "content": (
-                                "你刚才只写了一句简短的完成声明，但还没有把实际的详细总结输出给我。\n\n"
-                                "请根据之前收集到的所有数据，直接输出一份完整的总结报告，包含：\n"
-                                "- 每门课程的授课教师\n"
-                                "- 每位教师的评价摘要（含学生评价要点）\n"
-                                "- 引用标签（@序号+关键词@）\n\n"
-                                "现在就写，不要再调用任何工具。"
-                            ),
-                        })
-                        continue
+                        # 只有当确实收集到了实质性数据时，才要求模型详细输出。
+                        # 如果工具只返回了"没有/未找到"等空结果，短答案就是正确答案，
+                        # 强制要求"写完整总结"只会逼模型编造内容。
+                        if _has_substantive_tool_results(messages):
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "你刚才只写了一句简短的完成声明，但还没有把实际的详细结果输出给我。\n\n"
+                                    "请根据之前收集到的所有数据和工具执行结果，直接输出一份完整的总结，"
+                                    "不要再调用任何工具。"
+                                ),
+                            })
+                            continue
+                        # 无实质性数据 → 短答案合理，直接返回
+                        return content
                     # ── ② 清单式输出检测：模型写了「已完成 X/Y」清单但没有实际评价内容 ──
                     if _was_teacher_search_used(messages) and _looks_like_checklist_only(content):
                         messages.append({
@@ -393,18 +434,17 @@ class AgentLoop:
                     detailed = _find_last_detailed_assistant(messages)
                     if detailed:
                         return detailed
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "你刚才只写了一句简短的完成声明，但还没有把实际的详细总结输出给我。\n\n"
-                            "请根据之前收集到的所有数据，直接输出一份完整的总结报告，包含：\n"
-                            "- 每门课程的授课教师\n"
-                            "- 每位教师的评价摘要（含学生评价要点）\n"
-                            "- 引用标签（@序号+关键词@）\n\n"
-                            "现在就写，不要再调用任何工具。"
-                        ),
-                    })
-                    continue
+                    if _has_substantive_tool_results(messages):
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "你刚才只写了一句简短的完成声明，但还没有把实际的详细结果输出给我。\n\n"
+                                "请根据之前收集到的所有数据和工具执行结果，直接输出一份完整的总结，"
+                                "不要再调用任何工具。"
+                            ),
+                        })
+                        continue
+                    return content
                 # ── ② 清单式输出检测 ──
                 if _was_teacher_search_used(messages) and _looks_like_checklist_only(content):
                     messages.append({
@@ -660,18 +700,21 @@ class AgentLoop:
                                 "messages": messages,
                             })
                             return
-                        messages.append({
-                            "role": "user",
-                            "content": (
-                                "你刚才只写了一句简短的完成声明，但还没有把实际的详细总结输出给我。\n\n"
-                                "请根据之前收集到的所有数据，直接输出一份完整的总结报告，包含：\n"
-                                "- 每门课程的授课教师\n"
-                                "- 每位教师的评价摘要（含学生评价要点）\n"
-                                "- 引用标签（@序号+关键词@）\n\n"
-                                "现在就写，不要再调用任何工具。"
-                            ),
+                        if _has_substantive_tool_results(messages):
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "你刚才只写了一句简短的完成声明，但还没有把实际的详细结果输出给我。\n\n"
+                                    "请根据之前收集到的所有数据和工具执行结果，直接输出一份完整的总结，"
+                                    "不要再调用任何工具。"
+                                ),
+                            })
+                            continue
+                        yield ("done", {
+                            "content": content,
+                            "messages": messages,
                         })
-                        continue
+                        return
                     # ── ② 清单式输出检测 ──
                     if _was_teacher_search_used(messages) and _looks_like_checklist_only(content):
                         messages.append({
@@ -706,18 +749,21 @@ class AgentLoop:
                             "messages": messages,
                         })
                         return
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "你刚才只写了一句简短的完成声明，但还没有把实际的详细总结输出给我。\n\n"
-                            "请根据之前收集到的所有数据，直接输出一份完整的总结报告，包含：\n"
-                            "- 每门课程的授课教师\n"
-                            "- 每位教师的评价摘要（含学生评价要点）\n"
-                            "- 引用标签（@序号+关键词@）\n\n"
-                            "现在就写，不要再调用任何工具。"
-                        ),
+                    if _has_substantive_tool_results(messages):
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "你刚才只写了一句简短的完成声明，但还没有把实际的详细结果输出给我。\n\n"
+                                "请根据之前收集到的所有数据和工具执行结果，直接输出一份完整的总结，"
+                                "不要再调用任何工具。"
+                            ),
+                        })
+                        continue
+                    yield ("done", {
+                        "content": content,
+                        "messages": messages,
                     })
-                    continue
+                    return
                 # ── ② 清单式输出检测 ──
                 if _was_teacher_search_used(messages) and _looks_like_checklist_only(content):
                     messages.append({

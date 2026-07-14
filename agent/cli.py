@@ -46,10 +46,10 @@ def selfcheck() -> int:
 def _postprocess_result(result: str, show_all: bool = False) -> str:
     """对模型输出进行引用安全后处理（仅在教师评价数据存在时生效）。
 
-    默认模式下总是去掉 @引用@ 标签，确保用户看到干净的输出：
+    所有模式下均去除 @引用@ 标签，确保用户看到干净的输出：
     - 有搜索引擎数据 → 校验引用真实性，通过则去掉标签，失败则标 ⚠️
     - 无搜索引擎数据 → 直接去掉 @引用@ 标签（无法校验，但保证输出干净）
-    - -a 模式下保留完整标签供调试
+    - -a 模式下校验失败时提供更详细的诊断信息
     """
     import os as _os, sys as _sys
     _skill_dir = _os.path.join(_os.path.dirname(__file__), "..", "skills", "teacher-eval-search")
@@ -63,10 +63,9 @@ def _postprocess_result(result: str, show_all: bool = False) -> str:
         engine = get_engine()
         return postprocess_citations(result, engine, show_all=show_all)
     except Exception:
-        # 搜索引擎完全不可用时：默认模式去掉 @引用@ 标签，-a 模式保留
-        if not show_all:
-            import re as _re
-            result = _re.sub(r"@(\d+)\+(.+?)@", "", result)
+        # 搜索引擎完全不可用时：所有模式均去掉 @引用@ 标签
+        import re as _re
+        result = _re.sub(r"@(\d+)\+(.+?)@", "", result)
         return result
 
 
@@ -410,17 +409,8 @@ def main(argv: list[str] | None = None) -> int:
 
         # ── 交互模式（无任务参数时进入 REPL）──
         if not args.task:
-            # 交互模式下额外注入引用规则提醒，强化原封不动引用原文的要求
-            _citation_reminder = (
-                "\n\n"
-                "## ⚠️ 交互模式特别提醒：引用规则（每次输出评价前请自查）\n"
-                "- **@引用标签中的关键词必须是原评论中逐字复制（Ctrl+C）的连续文本，不得做任何改写、概括、近义替换或添加修饰词。**\n"
-                "- 自查方法：打开原始评价原文 → 找到你要引用的那句话 → 选中一个连续短语 → 原样粘贴到 @序号+关键词@ 中。\n"
-                "- 常见翻车案例：原文\"老师人很好\" → 你写\"老师很友好\" ❌ | 原文\"讲得清晰\" → 你写\"讲得非常清晰\" ❌ | 原文\"给分不错\" → 你写\"给分好\" ❌\n"
-                "- 如果某个观点没有原文能精确支撑，宁可标注\"暂无相关评价\"也不可自行编造引用。\n"
-            )
             try:
-                return interactive(backend, reg, system + _citation_reminder, tracer, show_all=args.show_all)
+                return interactive(backend, reg, system, tracer, show_all=args.show_all)
             finally:
                 # 安全：确保 MCP 子进程被清理
                 if echo_mcp is not None:

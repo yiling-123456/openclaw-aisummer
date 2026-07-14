@@ -1,3 +1,0 @@
-{"ts": 1783996904.996, "step": 1, "tool_calls": [{"id": "call_00_6jZfLh1uQjDr6z5XJTpc5431", "name": "list_memories", "arguments": {}}], "note": "list_memories", "prompt_tokens": 5439, "completion_tokens": 29}
-{"ts": 1783996905.878, "step": 2, "tool_calls": [{"id": "call_00_NfVRizy0FnhnKMxhYA8C7580", "name": "recall_memory", "arguments": {"query": "user_output_preference"}}], "note": "recall_memory", "prompt_tokens": 5484, "completion_tokens": 48}
-{"ts": 1783996906.955, "step": 3, "tool_calls": [], "note": "最终答复", "prompt_tokens": 5564, "completion_tokens": 40}
